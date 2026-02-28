@@ -236,14 +236,24 @@ body{
 .advice-row:last-child{border-bottom:none}
 .advice-row .adv-label{font-size:11px;color:#86868b;margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px}
 /* ===== Past Posts Analysis ===== */
-.past-posts-btn{
-  width:100%;padding:14px;margin-top:10px;border:1px solid #1d9bf0;border-radius:14px;
-  font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;
-  background:transparent;color:#1d9bf0;transition:all .15s;
+.past-section{margin-top:28px;border-top:1px solid #2c2c2e;padding-top:20px}
+.past-section .past-header{font-size:16px;font-weight:600;color:#1d9bf0;margin-bottom:8px}
+.past-section .past-desc{font-size:13px;color:#86868b;margin-bottom:12px;line-height:1.5}
+.past-textarea{
+  width:100%;min-height:180px;background:#1c1c1e;border:none;border-radius:16px;
+  color:#f5f5f7;padding:16px;font-size:14px;line-height:1.6;resize:none;
+  font-family:inherit;transition:box-shadow .2s;
 }
-.past-posts-btn:hover{background:#1d9bf011}
+.past-textarea::placeholder{color:#636366}
+.past-textarea:focus{outline:none;box-shadow:0 0 0 2px #1d9bf0}
+.past-posts-btn{
+  width:100%;padding:14px;margin-top:10px;border:none;border-radius:14px;
+  font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;
+  background:#1d9bf0;color:#fff;transition:all .15s;
+}
+.past-posts-btn:hover{background:#1a8cd8}
 .past-posts-btn:active{transform:scale(.98)}
-.past-posts-btn:disabled{border-color:#48484a;color:#48484a;cursor:default;transform:none}
+.past-posts-btn:disabled{background:#1c1c1e;color:#48484a;cursor:default;transform:none}
 .past-loading{display:none;text-align:center;padding:40px 0}
 .past-loading .loading-ring{border-top-color:#1d9bf0}
 .past-loading .loading-text{color:#1d9bf0}
@@ -303,16 +313,21 @@ body{
       <input id="engrate" type="number" step="0.001" placeholder="エンゲージ率" value="0.02">
     </div>
     <button class="llm-btn" id="llmBtn" onclick="llmAnalyze()" style="width:100%;margin-top:16px">AI分析<span class="badge">Claude</span></button>
-    <button class="past-posts-btn" id="pastPostsBtn" onclick="analyzePastPosts()">過去の投稿を分析</button>
   </div>
   <div class="llm-loading" id="llmLoading">
     <div class="loading-ring"></div>
     <div class="loading-text">AIが投稿を最適化中...</div>
   </div>
   <div class="llm-results" id="llmResults"></div>
+  <div class="past-section">
+    <div class="past-header">過去の投稿を分析</div>
+    <div class="past-desc">Xの自分のプロフィールから過去の投稿をコピーして貼り付けてください。<br>AIがパターンを分析し、バズるコンテンツ戦略を提案します。</div>
+    <textarea id="pastInput" class="past-textarea" placeholder="過去の投稿を貼り付け...&#10;&#10;例:&#10;今日はいい天気だった&#10;&#10;プログラミング楽しい&#10;&#10;新しいカフェ見つけた"></textarea>
+    <button class="past-posts-btn" id="pastPostsBtn" onclick="analyzePastPosts()">過去の投稿をAI分析</button>
+  </div>
   <div class="past-loading" id="pastLoading">
     <div class="loading-ring"></div>
-    <div class="loading-text">過去の投稿を取得・分析中...</div>
+    <div class="loading-text">AIが過去の投稿を分析中...</div>
   </div>
   <div class="past-results" id="pastResults"></div>
   <div class="history" id="historySection" style="display:none">
@@ -748,50 +763,38 @@ function loadHistory(text){document.getElementById('text').value=text;updateChar
 function clearHistory(){historyArr=[];localStorage.removeItem('ve_history');renderHistory()}
 
 // ---------------------------------------------------------------------------
-// Past Posts Analysis — Fetch user's tweets and analyze with Claude
+// Past Posts Analysis — Paste tweets and analyze with Claude (no server needed)
 // ---------------------------------------------------------------------------
-const TWEETS_PROXY=location.origin+'/api/user-tweets';
-
 const PAST_POSTS_SYSTEM=`You are an expert X (Twitter) content strategist.
-You analyze a user's past posts along with their engagement metrics to identify what content performs best.
+You analyze a user's past posts to identify what content performs best.
 Your goal: find patterns in high-performing content and give actionable recommendations.
 
 You respond ONLY in valid JSON. No markdown fences. No explanation outside JSON.
 IMPORTANT: All text values in the JSON MUST be written in Japanese (日本語).`;
 
-function buildPastPostsPrompt(tweets, userInfo){
-  const tweetData=tweets.map((t,i)=>{
-    const m=t.public_metrics||{};
-    return `${i+1}. [いいね:${m.like_count||0} RT:${m.retweet_count||0} 返信:${m.reply_count||0}] "${t.text}"`;
-  }).join('\n');
+function buildPastPostsPrompt(posts, username){
+  const numbered=posts.map((p,i)=>`${i+1}. "${p}"`).join('\n');
+  return `以下は @${username} の過去の投稿です。
 
-  return `以下は @${userInfo.username} の最近の投稿とエンゲージメント指標です。
-
-ユーザー情報:
-- フォロワー数: ${(userInfo.metrics&&userInfo.metrics.followers_count)||'不明'}
-- 投稿数: ${(userInfo.metrics&&userInfo.metrics.tweet_count)||'不明'}
-
-投稿一覧 (エンゲージメント指標付き):
-${tweetData}
+投稿一覧:
+${numbered}
 
 この投稿データを分析して、以下のJSON形式で回答してください:
 {
   "summary": "<ユーザーのコンテンツ全体の傾向を2-3文で要約>",
-  "total_analyzed": ${tweets.length},
+  "total_analyzed": ${posts.length},
   "top_posts": [
     {
       "rank": 1,
-      "text": "<投稿テキスト>",
-      "likes": <いいね数>,
-      "retweets": <RT数>,
-      "why_viral": "<なぜこの投稿がよくパフォーマンスしたか>"
+      "text": "<最もバズりやすい投稿テキスト>",
+      "why_good": "<なぜこの投稿が良いか>"
     }
   ],
   "winning_patterns": [
     {
       "pattern": "<パターン名>",
       "description": "<説明>",
-      "frequency": "<このパターンがトップ投稿に出現する頻度>"
+      "frequency": "<このパターンの出現頻度>"
     }
   ],
   "content_recommendations": [
@@ -810,44 +813,26 @@ ${tweetData}
   }
 }
 
-top_postsはエンゲージメントが高い順に最大5件。winning_patternsは最大5件。content_recommendationsは最大3件。`;
+top_postsはバイラル可能性が高い順に最大5件。winning_patternsは最大5件。content_recommendationsは最大3件。`;
 }
 
 async function analyzePastPosts(){
-  const username=localStorage.getItem('ve_auth');
-  if(!username){showToast('ログインしてください');return;}
+  const raw=document.getElementById('pastInput').value.trim();
+  if(!raw){showToast('過去の投稿を貼り付けてください');return;}
 
+  // Split by double newline or treat each non-empty line as a post
+  const posts=raw.split(/\n\s*\n/).map(p=>p.trim()).filter(p=>p.length>0);
+  if(posts.length<2){showToast('2件以上の投稿を貼り付けてください');return;}
+
+  const username=localStorage.getItem('ve_auth')||'user';
   const btn=document.getElementById('pastPostsBtn');
   const ld=document.getElementById('pastLoading');
   const res=document.getElementById('pastResults');
   btn.disabled=true;ld.style.display='block';res.style.display='none';
 
   try{
-    // Step 1: Fetch tweets via proxy
-    const tweetsResp=await fetch(TWEETS_PROXY,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        username:username,
-        bearer_token:X_BEARER,
-        count:30
-      })
-    });
+    ld.querySelector('.loading-text').textContent='AIが'+posts.length+'件の投稿を分析中...';
 
-    if(!tweetsResp.ok){
-      const err=await tweetsResp.json().catch(()=>({}));
-      throw new Error(err.error||'投稿の取得に失敗しました ('+tweetsResp.status+')');
-    }
-
-    const tweetsData=await tweetsResp.json();
-    if(!tweetsData.tweets||tweetsData.tweets.length===0){
-      throw new Error('投稿が見つかりません。');
-    }
-
-    // Update loading text
-    ld.querySelector('.loading-text').textContent='AIが'+tweetsData.count+'件の投稿を分析中...';
-
-    // Step 2: Send tweets to Claude for analysis
     const _k=['***REMOVED***','***REMOVED***','***REMOVED***','***REMOVED***'];
     const apiKey=atob(_k.join(''));
 
@@ -863,7 +848,7 @@ async function analyzePastPosts(){
         model:'claude-sonnet-4-20250514',
         max_tokens:4096,
         system:PAST_POSTS_SYSTEM,
-        messages:[{role:'user',content:buildPastPostsPrompt(tweetsData.tweets,tweetsData.user)}]
+        messages:[{role:'user',content:buildPastPostsPrompt(posts,username)}]
       })
     });
 
@@ -884,47 +869,35 @@ async function analyzePastPosts(){
     if(Object.keys(parsed).length===0){
       res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">AI応答の解析に失敗しました</div>';
     }else{
-      res.innerHTML=renderPastPostsAnalysis(parsed,tweetsData.user);
+      res.innerHTML=renderPastPostsAnalysis(parsed,username);
     }
     res.style.display='block';
-
   }catch(e){
-    // Check if it's a proxy connection error (GitHub Pages / no server)
-    if(e.message.includes('Failed to fetch')||e.message.includes('NetworkError')){
-      res.innerHTML='<div style="text-align:center;padding:20px;color:#ff9f0a;font-size:14px;line-height:1.6">'
-        +'この機能はローカルサーバー（web.py）が必要です。<br>'
-        +'<code style="background:#1c1c1e;padding:4px 8px;border-radius:6px;font-size:12px">python web.py</code> を実行してから再試行してください。</div>';
-    }else{
-      res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a;font-size:14px">'+escHtml(e.message)+'</div>';
-    }
+    res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a;font-size:14px">'+escHtml(e.message)+'</div>';
     res.style.display='block';
   }finally{
     btn.disabled=false;ld.style.display='none';
-    ld.querySelector('.loading-text').textContent='過去の投稿を取得・分析中...';
+    ld.querySelector('.loading-text').textContent='AIが過去の投稿を分析中...';
   }
 }
 
-function renderPastPostsAnalysis(d,user){
+function renderPastPostsAnalysis(d,username){
   let h='';
 
   // Hero
   h+='<div class="past-hero">';
-  h+='<div class="past-title">@'+escHtml(user.username)+' のコンテンツ分析</div>';
+  h+='<div class="past-title">@'+escHtml(username)+' のコンテンツ分析</div>';
   h+='<div class="past-sub">'+escHtml(d.summary||d.total_analyzed+'件の投稿を分析しました')+'</div>';
   h+='</div>';
 
   // Top posts
   if(d.top_posts&&d.top_posts.length){
-    h+='<div class="section-label">トップパフォーマンス投稿</div>';
+    h+='<div class="section-label">バズりやすい投稿</div>';
     for(const p of d.top_posts){
       h+='<div class="top-post">';
-      h+='<div class="top-rank">#'+p.rank+' ベスト投稿</div>';
+      h+='<div class="top-rank">#'+p.rank+'</div>';
       h+='<div class="top-text">'+escHtml(p.text)+'</div>';
-      h+='<div class="top-metrics">';
-      h+='<div class="top-metric">いいね <span>'+p.likes+'</span></div>';
-      h+='<div class="top-metric">RT <span>'+p.retweets+'</span></div>';
-      h+='</div>';
-      if(p.why_viral) h+='<div style="font-size:12px;color:#86868b;margin-top:8px;line-height:1.4">'+escHtml(p.why_viral)+'</div>';
+      if(p.why_good) h+='<div style="font-size:12px;color:#86868b;margin-top:8px;line-height:1.4">'+escHtml(p.why_good)+'</div>';
       h+='</div>';
     }
   }
