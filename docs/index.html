@@ -632,7 +632,8 @@ function showToast(msg){const t=document.getElementById('toast');t.textContent=m
 function renderLLM(d){
   let h='';
   h+='<div class="llm-hero"><div class="llm-score-big">'+(d.viral_score||'?')+'<span style="font-size:20px;opacity:.5"> / 100</span></div>';
-  h+='<div class="llm-score-label">AIバイラルポテンシャル（最適化後）</div></div>';
+  h+='<div class="llm-score-label">AIバイラルポテンシャル（最適化後）</div>';
+  h+='<div style="font-size:11px;color:#86868b;margin-top:8px;line-height:1.4">※ このスコアは全ての提案を実施した場合の理論上の上限値です。<br>リライトをそのまま投稿した場合の実際のバズる確率とは異なります。</div></div>';
 
   if(d.diagnosis){
     h+='<div class="section-label">診断</div><div class="llm-diagnosis">';
