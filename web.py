@@ -7,6 +7,7 @@ import json
 import os
 from datetime import datetime, timezone
 
+import requests as http_requests
 import yaml
 from flask import Flask, request, jsonify, render_template_string
 
@@ -833,6 +834,63 @@ def api_llm_analyze():
         "thread_strategy": analysis.thread_strategy,
         "posting_advice": analysis.posting_advice,
     })
+
+
+@app.route("/api/auth/exchange", methods=["POST", "OPTIONS"])
+def api_auth_exchange():
+    """Proxy X OAuth 2.0 token exchange to avoid CORS issues on static sites."""
+    if request.method == "OPTIONS":
+        resp = app.make_default_options_response()
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        resp.headers["Access-Control-Allow-Methods"] = "POST"
+        return resp
+
+    data = request.get_json()
+    code = data.get("code")
+    verifier = data.get("code_verifier")
+    redirect_uri = data.get("redirect_uri")
+    client_id = data.get("client_id")
+
+    if not all([code, verifier, redirect_uri, client_id]):
+        resp = jsonify({"error": "Missing required parameters"})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp, 400
+
+    # Exchange authorization code for access token (server-to-server, no CORS)
+    token_resp = http_requests.post(
+        "https://api.x.com/2/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": verifier,
+        },
+    )
+
+    if not token_resp.ok:
+        resp = jsonify({"error": f"Token exchange failed: {token_resp.status_code}"})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp, 400
+
+    access_token = token_resp.json().get("access_token")
+
+    # Fetch authenticated user profile
+    user_resp = http_requests.get(
+        "https://api.x.com/2/users/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    if not user_resp.ok:
+        resp = jsonify({"error": "Failed to fetch user profile"})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp, 400
+
+    user_data = user_resp.json()["data"]
+    resp = jsonify({"username": user_data["username"], "name": user_data.get("name", user_data["username"])})
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 
 if __name__ == "__main__":
