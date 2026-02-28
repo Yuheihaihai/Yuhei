@@ -2,7 +2,7 @@
 
 x_api:
   # Bearer token — can also be set via X_BEARER_TOKEN environment variable
-  bearer_token: null
+  bearer_token: "***REMOVED_X_BEARER_TOKEN***"
 
 storage:
   db_path: "data/virality.db"
