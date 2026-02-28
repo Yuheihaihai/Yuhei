@@ -857,36 +857,60 @@ def _recommend_engagement_close(text: str, fv: FeatureVector) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Initialization stubs (replaced with real implementations in production)
+# Initialization — real implementations backed by lightweight NLP + SQLite
 # ---------------------------------------------------------------------------
 
+_shared_store = None
+
+
+def _get_or_create_store(config: dict):
+    global _shared_store
+    if _shared_store is None:
+        from src.storage.database import Database
+        db_path = config.get("db_path",
+                             config.get("storage", {}).get("db_path", "data/virality.db"))
+        _shared_store = Database(db_path)
+    return _shared_store
+
+
 def _init_nlp_pipeline(config: dict):
-    """Initialize NLP models: sentiment, emotion, embeddings, topic."""
-    raise NotImplementedError("Plug in real NLP pipeline")
+    """Initialize NLP models: VADER sentiment, textstat readability, hash embeddings."""
+    from src.nlp.pipeline import NLPPipeline
+    dim = config.get("nlp", {}).get("embedding_dim", 384) if isinstance(config, dict) else 384
+    return NLPPipeline(embedding_dim=dim)
 
 
 def _init_trend_store(config: dict):
-    """Initialize trend tracking store."""
-    raise NotImplementedError("Plug in real trend store")
+    """Initialize trend store backed by SQLite."""
+    return _get_or_create_store(config)
 
 
 def _init_pattern_db(config: dict):
-    """Initialize viral pattern database."""
-    raise NotImplementedError("Plug in real pattern DB")
+    """Initialize viral pattern database backed by SQLite."""
+    return _get_or_create_store(config)
 
 
 def _load_ml_model(model_path: str | None):
-    """Load trained XGBoost model from disk."""
+    """Load trained ML model. Returns None for MVP (formula-only scoring)."""
     if model_path is None:
         return None
-    raise NotImplementedError("Plug in real model loader")
+    import logging
+    logging.getLogger(__name__).warning(
+        "ML model path specified (%s) but model loading not yet implemented. "
+        "Using formula-only scoring.", model_path
+    )
+    return None
 
 
 def _init_hook_generator(config: dict):
-    """Initialize hook generation module."""
-    raise NotImplementedError("Plug in real hook generator")
+    """Initialize template-based hook generator."""
+    from src.strategy.hook_generator import HookGenerator
+    nlp = _init_nlp_pipeline(config)
+    return HookGenerator(nlp)
 
 
 def _init_timing_optimizer(config: dict):
-    """Initialize timing optimization module."""
-    raise NotImplementedError("Plug in real timing optimizer")
+    """Initialize timing optimizer backed by engagement heatmap data."""
+    from src.strategy.timing import TimingOptimizer
+    store = _get_or_create_store(config)
+    return TimingOptimizer(store)
