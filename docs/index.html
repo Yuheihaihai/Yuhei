@@ -647,7 +647,8 @@ Core principles you follow:
 9. TIMING — Reference current trends, zeitgeist, or pain points.
 10. FORMAT — Use line breaks aggressively. No hashtags (or max 1). No links in the main body.
 
-You respond ONLY in valid JSON. No markdown fences. No explanation outside JSON.`;
+You respond ONLY in valid JSON. No markdown fences. No explanation outside JSON.
+IMPORTANT: All text values in the JSON (diagnosis, rewrites, hooks, strategies, advice) MUST be written in Japanese (日本語).`;
 
 function buildAnalyzePrompt(text, followers, features){
   const featStr=Object.entries(features).map(([k,v])=>`${k}: ${(v*100).toFixed(0)}%`).join(', ');
@@ -1046,7 +1047,8 @@ function renderResult(d){
     h+='<div class="section-label">改善提案</div><div class="rec-list">';
     for(const r of d.recommendations){
       const cls=r.type==='timing'?'timing':r.type==='format'?'format':r.type==='trigger'?'trigger':'';
-      h+='<div class="rec-card '+cls+'"><div class="rec-header"><span class="rec-tag">'+r.type+'</span>';
+      const typeJa={rewrite:'リライト',timing:'タイミング',format:'フォーマット',trigger:'トリガー'};
+      h+='<div class="rec-card '+cls+'"><div class="rec-header"><span class="rec-tag">'+(typeJa[r.type]||r.type)+'</span>';
       h+='<span class="rec-delta">'+(r.score_delta>=0?'+':'')+r.score_delta.toFixed(3)+'</span></div>';
       h+='<div class="rec-body">';
       if(r.type==='format'&&r.detail.suggestions) for(const sg of r.detail.suggestions) h+='<div>'+escHtml(sg.action)+'</div>';
@@ -1083,10 +1085,10 @@ function renderLLM(d){
 
   if(d.diagnosis){
     h+='<div class="section-label">診断</div><div class="llm-diagnosis">';
-    if(d.diagnosis.current_viral_probability) h+='<div class="prob">Current viral probability: '+escHtml(d.diagnosis.current_viral_probability)+'</div>';
+    if(d.diagnosis.current_viral_probability) h+='<div class="prob">現在のバズる確率: '+escHtml(d.diagnosis.current_viral_probability)+'</div>';
     if(d.diagnosis.fatal_flaws) for(const f of d.diagnosis.fatal_flaws) h+='<div class="flaw-item"><span>✕</span><span>'+escHtml(f)+'</span></div>';
     if(d.diagnosis.strengths) for(const s of d.diagnosis.strengths) h+='<div class="strength-item"><span>✓</span><span>'+escHtml(s)+'</span></div>';
-    if(d.diagnosis.algorithm_signals) h+='<div class="algo">Algorithm: '+escHtml(d.diagnosis.algorithm_signals)+'</div>';
+    if(d.diagnosis.algorithm_signals) h+='<div class="algo">アルゴリズム評価: '+escHtml(d.diagnosis.algorithm_signals)+'</div>';
     h+='</div>';
   }
 
@@ -1100,7 +1102,7 @@ function renderLLM(d){
       h+='<span class="copy-label" onclick="copyText(this.parentElement.nextElementSibling.textContent)">コピー</span></div>';
       h+='<div class="rewrite-text" onclick="copyText(this.textContent)">'+escHtml(rw.text)+'</div>';
       h+='<div class="rewrite-strategy">'+escHtml(rw.strategy||'')+'</div>';
-      if(rw.predicted_engagement) h+='<div class="rewrite-eng">Predicted: '+escHtml(rw.predicted_engagement)+'</div>';
+      if(rw.predicted_engagement) h+='<div class="rewrite-eng">予想エンゲージメント: '+escHtml(rw.predicted_engagement)+'</div>';
       h+='</div>';
     }
   }
