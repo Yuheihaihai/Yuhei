@@ -171,6 +171,33 @@ body{
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
 }
 .history-clear{font-size:13px;color:#ff453a;text-align:center;padding:8px;cursor:pointer;-webkit-user-select:none;user-select:none;margin-top:4px}
+/* ===== Login Screen ===== */
+.login-screen{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;min-height:100dvh;padding:40px 20px;text-align:center;
+}
+.login-screen .login-icon{font-size:48px;margin-bottom:20px}
+.login-screen h2{font-size:24px;font-weight:700;margin-bottom:8px}
+.login-screen .login-sub{font-size:14px;color:#86868b;margin-bottom:32px;line-height:1.5}
+.login-input-wrap{width:100%;max-width:320px;position:relative}
+.login-input-wrap input{
+  width:100%;background:#1c1c1e;border:none;border-radius:14px;color:#f5f5f7;
+  padding:16px 16px 16px 36px;font-size:17px;font-family:inherit;
+}
+.login-input-wrap input:focus{outline:none;box-shadow:0 0 0 2px #1d9bf0}
+.login-input-wrap .at-sign{
+  position:absolute;left:14px;top:50%;transform:translateY(-50%);
+  font-size:17px;color:#1d9bf0;font-weight:600;pointer-events:none;
+}
+.login-btn{
+  width:100%;max-width:320px;padding:16px;margin-top:16px;border:none;border-radius:14px;
+  font-size:17px;font-weight:600;font-family:inherit;cursor:pointer;
+  background:#1d9bf0;color:#fff;transition:all .15s;
+}
+.login-btn:active{transform:scale(.98);background:#1a8cd8}
+.login-btn:disabled{background:#1c1c1e;color:#48484a;cursor:default;transform:none}
+.login-error{font-size:13px;color:#ff453a;margin-top:12px;min-height:20px}
+.login-footer{font-size:12px;color:#48484a;margin-top:40px}
 .llm-loading{display:none;text-align:center;padding:40px 0}
 .llm-loading .loading-ring{border-top-color:#bf5af2}
 .llm-loading .loading-text{color:#bf5af2}
@@ -215,7 +242,22 @@ body{
 </style>
 </head>
 <body>
-<div class="app">
+<!-- Login Screen -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-icon">X</div>
+  <h2>Virality Engine</h2>
+  <div class="login-sub">Xアカウントでログインしてください。<br>許可されたアカウントのみ利用可能です。</div>
+  <div class="login-input-wrap">
+    <span class="at-sign">@</span>
+    <input id="loginHandle" type="text" placeholder="username" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </div>
+  <button class="login-btn" id="loginBtn" onclick="attemptLogin()">ログイン</button>
+  <div class="login-error" id="loginError"></div>
+  <div class="login-footer">Authorized users only</div>
+</div>
+
+<!-- Main App (hidden until login) -->
+<div class="app" id="mainApp" style="display:none">
   <div class="header">
     <h1>Virality Engine</h1>
     <p>X post virality score &amp; optimization.<br>Runs 100% in your browser.</p>
@@ -675,6 +717,73 @@ Respond in this exact JSON format:
   "viral_score": 75
 }`;
 }
+
+// ---------------------------------------------------------------------------
+// Auth — X account login
+// ---------------------------------------------------------------------------
+const ALLOWED_HANDLES=['lovejesusyt'];  // lowercase
+
+function checkSession(){
+  const saved=localStorage.getItem('ve_auth');
+  if(saved && ALLOWED_HANDLES.includes(saved.toLowerCase())){
+    showApp();
+  }
+}
+
+async function attemptLogin(){
+  const input=document.getElementById('loginHandle');
+  const err=document.getElementById('loginError');
+  const btn=document.getElementById('loginBtn');
+  const handle=input.value.trim().replace(/^@/,'').toLowerCase();
+  if(!handle){err.textContent='ユーザー名を入力してください';return}
+
+  btn.disabled=true;btn.textContent='確認中...';err.textContent='';
+
+  // Check against allowed list
+  if(!ALLOWED_HANDLES.includes(handle)){
+    err.textContent='このアカウントは許可されていません';
+    btn.disabled=false;btn.textContent='ログイン';
+    return;
+  }
+
+  // Verify the account exists via X API
+  try{
+    const resp=await fetch('https://api.x.com/2/users/by/username/'+handle,{
+      headers:{'Authorization':'Bearer '+X_BEARER}
+    });
+    if(resp.ok){
+      const data=await resp.json();
+      if(data.data && data.data.username){
+        localStorage.setItem('ve_auth',handle);
+        showApp();
+        return;
+      }
+    }
+  }catch(e){
+    // X API might be blocked by CORS in browser — fall back to local check
+  }
+
+  // Fallback: if X API is CORS-blocked, trust the local allowlist check
+  localStorage.setItem('ve_auth',handle);
+  showApp();
+}
+
+function showApp(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('mainApp').style.display='block';
+}
+
+function logout(){
+  localStorage.removeItem('ve_auth');
+  location.reload();
+}
+
+// Auto-login on Enter key
+document.addEventListener('DOMContentLoaded',()=>{
+  const li=document.getElementById('loginHandle');
+  if(li) li.addEventListener('keydown',e=>{if(e.key==='Enter')attemptLogin()});
+  checkSession();
+});
 
 // ---------------------------------------------------------------------------
 // UI Logic
