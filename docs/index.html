@@ -1016,18 +1016,18 @@ function renderResult(d){
   h+='<div class="score-hero"><div class="ring-container">';
   h+='<svg viewBox="0 0 140 140"><circle class="ring-bg" cx="70" cy="70" r="60"/>';
   h+='<circle class="ring-fill" cx="70" cy="70" r="60" stroke="'+ringCol+'" stroke-dasharray="'+circ+'" stroke-dashoffset="'+circ+'" data-target="'+offset+'"/>';
-  h+='</svg><div class="ring-score" style="color:'+ringCol+'">'+(pct*100).toFixed(0)+'<br><span class="ring-label">score</span></div>';
+  h+='</svg><div class="ring-score" style="color:'+ringCol+'">'+(pct*100).toFixed(0)+'<br><span class="ring-label">スコア</span></div>';
   h+='</div><div class="score-category" style="background:'+catBg+';color:'+ringCol+'">'+catLabel(s.category)+'</div>';
   h+='<div class="impressions-row">';
-  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p50)+'</div><div class="label">p50</div></div>';
-  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p75)+'</div><div class="label">p75</div></div>';
-  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p90)+'</div><div class="label">p90</div></div>';
+  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p50)+'</div><div class="label">予想imp(中央)</div></div>';
+  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p75)+'</div><div class="label">予想imp(上位)</div></div>';
+  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p90)+'</div><div class="label">予想imp(最大)</div></div>';
   h+='</div></div>';
 
   h+='<div class="section-label">スコア内訳</div><div class="features-grid">';
-  const fnames={hook_strength:'Hook',emotional_intensity:'Emotion',curiosity_gap:'Curiosity',
-    controversy_index:'Controversy',readability_score:'Readability',structure_score:'Structure',
-    timing_score:'Timing',trend_alignment:'Trend'};
+  const fnames={hook_strength:'つかみ',emotional_intensity:'感情',curiosity_gap:'気になる度',
+    controversy_index:'議論性',readability_score:'読みやすさ',structure_score:'構成',
+    timing_score:'投稿タイミング',trend_alignment:'トレンド'};
   for(const[k,v]of Object.entries(s.feature_breakdown)){
     const c=featColor(v);
     h+='<div class="feat-card"><div class="feat-name">'+(fnames[k]||k)+'</div>';
