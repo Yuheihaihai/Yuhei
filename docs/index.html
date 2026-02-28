@@ -254,7 +254,7 @@ body{
 <div class="app" id="mainApp" style="display:none">
   <div class="header">
     <h1>Virality Engine</h1>
-    <p>Xの投稿を分析してバズる戦略を提案します。<br>ブラウザ上で100%動作します。</p>
+    <p>Xの投稿をAIが分析し、バズる戦略を提案します。</p>
   </div>
   <div class="input-area">
     <div class="textarea-wrap">
@@ -269,16 +269,8 @@ body{
       <input id="followers" type="number" placeholder="フォロワー数" value="10000">
       <input id="engrate" type="number" step="0.001" placeholder="エンゲージ率" value="0.02">
     </div>
-    <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">投稿を分析</button>
-    <div class="btn-row">
-      <button class="llm-btn" id="llmBtn" onclick="llmAnalyze()">AI詳細分析<span class="badge">Claude</span></button>
-    </div>
+    <button class="llm-btn" id="llmBtn" onclick="llmAnalyze()" style="width:100%;margin-top:16px">AI分析<span class="badge">Claude</span></button>
   </div>
-  <div class="loading" id="loading">
-    <div class="loading-ring"></div>
-    <div class="loading-text">分析中...</div>
-  </div>
-  <div class="results" id="results"></div>
   <div class="llm-loading" id="llmLoading">
     <div class="loading-ring"></div>
     <div class="loading-text">AIが投稿を最適化中...</div>
@@ -294,338 +286,8 @@ body{
 
 <script>
 /* ==========================================================================
-   VIRALITY ENGINE — 100% Client-Side JavaScript Port
-   Ported from src/core/virality_engine.py
+   VIRALITY ENGINE — AI Analysis (Claude)
    ========================================================================== */
-
-// ---------------------------------------------------------------------------
-// Constants (from Python)
-// ---------------------------------------------------------------------------
-const POWER_WORDS = new Set([
-  "secret","surprising","shocking","nobody","everyone","actually","truth",
-  "mistake","wrong","free","instantly","proven","warning","breaking","urgent",
-  "exclusive","hidden","banned","illegal","controversial","insane","genius",
-  "underrated","overrated","deadly","critical","massive","ultimate",
-  "revolutionary","destroyed","exposed","leaked"
-]);
-
-const STRUCTURE_PATTERNS = {
-  LISTICLE:0.15, THREAD_HOOK:0.10, CONTRARIAN:0.12, STORY_OPEN:0.08,
-  ONE_LINER:0.06, QUESTION:0.07, VERSUS:0.09, BEFORE_AFTER:0.11, BOLD_CLAIM:0.13
-};
-
-const WEIGHTS = {
-  hook:0.20, emotion:0.15, curiosity:0.15, structure:0.12,
-  readability:0.08, timing:0.10, trend:0.10, controversy:0.05, format:0.05
-};
-
-const INTERACTION_COEFFICIENTS = {
-  hook_x_curiosity:0.08, trend_x_timing:0.05,
-  emotion_x_controversy:0.04, controversy_penalty:-0.10
-};
-
-const IMPRESSION_BUCKETS = [
-  [0.00,0.30,10000],[0.30,0.50,100000],[0.50,0.70,500000],
-  [0.70,0.85,1000000],[0.85,1.00,5000000]
-];
-
-const WEAKNESS_THRESHOLDS = {
-  hook_strength:0.70, emotional_intensity:0.50, curiosity_gap:0.50,
-  readability_score:0.70, timing_score:0.80, trend_alignment:0.40, structure_score:0.50
-};
-
-// Sentiment word lists (lightweight VADER-like)
-const POS_WORDS = new Set(["good","great","best","amazing","awesome","love","excellent","wonderful","fantastic","perfect","beautiful","happy","brilliant","outstanding","incredible","superb","nice","cool","favorite","remarkable","extraordinary","phenomenal","magnificent","superior","exceptional"]);
-const NEG_WORDS = new Set(["bad","worst","terrible","horrible","hate","awful","poor","ugly","stupid","boring","fail","failure","wrong","mistake","problem","issue","broken","useless","painful","disaster","catastrophe","nightmare","toxic","garbage","pathetic"]);
-const EMOTION_WORDS = {
-  anger:new Set(["angry","furious","outraged","mad","infuriating","rage","livid","disgusting"]),
-  fear:new Set(["afraid","scared","terrifying","dangerous","warning","threat","risk","alarming"]),
-  joy:new Set(["happy","excited","thrilled","delighted","celebrating","wonderful","blessed"]),
-  surprise:new Set(["shocking","unexpected","unbelievable","mindblowing","insane","crazy","wild"]),
-  sadness:new Set(["sad","heartbreaking","devastating","tragic","painful","crying","loss"])
-};
-const CURIOSITY_PATTERNS = [
-  /here'?s?\s+(why|how|what)/i, /you\s+(won'?t|wouldn'?t)\s+believe/i,
-  /the\s+(real|actual|true)\s+reason/i, /nobody\s+(talks?|knows?|tells?)/i,
-  /what\s+(happened|they|i)\s/i, /turns?\s+out/i, /secret/i,
-  /\d+\s+(things?|reasons?|ways?|tips?|mistakes?|rules?|facts?)/i,
-  /did\s+you\s+know/i, /stop\s+(doing|using|saying)/i,
-  /the\s+\w+\s+that\s+\w+\s+don'?t/i, /thread/i
-];
-
-// ---------------------------------------------------------------------------
-// Utility
-// ---------------------------------------------------------------------------
-function clamp(v,lo=0,hi=1){return Math.max(lo,Math.min(hi,v))}
-function sigmoid(x){
-  if(x>=0){return 1/(1+Math.exp(-x))}
-  const ex=Math.exp(x);return ex/(1+ex);
-}
-
-// ---------------------------------------------------------------------------
-// Feature Extraction (client-side heuristic-based)
-// ---------------------------------------------------------------------------
-function extractFeatures(text, followers, engRate){
-  const fv = {};
-
-  // Hook strength
-  const firstLine = text.split('\n')[0].trim();
-  const tokens = firstLine.toLowerCase().split(/\s+/);
-  const hasNumber = tokens.some(t=>/^\d+$/.test(t)) ? 1 : 0;
-  const pwCount = tokens.filter(t=>POWER_WORDS.has(t)).length;
-  const powerWordRatio = pwCount / Math.max(tokens.length,1);
-  const brevity = Math.max(0, 1 - firstLine.length / 100);
-  const curiositySignal = curiosityGapScore(firstLine);
-  const patternInterrupt = patternInterruptScore(firstLine);
-  fv.hook_strength = clamp(0.20*hasNumber + 0.25*powerWordRatio + 0.20*brevity + 0.25*curiositySignal + 0.10*patternInterrupt);
-
-  // Emotional intensity
-  const words = text.split(/\s+/);
-  const lowerWords = words.map(w=>w.toLowerCase().replace(/[^a-z]/g,''));
-  let posCount=0, negCount=0;
-  lowerWords.forEach(w=>{if(POS_WORDS.has(w))posCount++;if(NEG_WORDS.has(w))negCount++});
-  const sentimentCompound = (posCount-negCount)/Math.max(words.length,1);
-  let emotionMax=0;
-  for(const[,eset]of Object.entries(EMOTION_WORDS)){
-    const cnt=lowerWords.filter(w=>eset.has(w)).length/Math.max(words.length,1);
-    if(cnt>emotionMax)emotionMax=cnt;
-  }
-  emotionMax = Math.min(emotionMax*5, 1);
-  const exclDensity = words.filter(w=>/[!?]$/.test(w)).length / Math.max(words.length,1);
-  const capsWords = words.filter(w=>w===w.toUpperCase()&&w.length>1&&/[A-Z]/.test(w)).length;
-  const capsRatio = Math.min(capsWords/Math.max(words.length,1), 0.15);
-  fv.emotional_intensity = clamp(0.30*Math.abs(sentimentCompound)*3 + 0.35*emotionMax + 0.20*exclDensity*5 + 0.15*capsRatio*6);
-
-  // Curiosity gap
-  fv.curiosity_gap = curiosityGapScore(text);
-
-  // Controversy index
-  const stanceWords = new Set(["always","never","everyone","nobody","only","must","wrong","right","best","worst"]);
-  const stanceCount = lowerWords.filter(w=>stanceWords.has(w)).length;
-  const stanceStrength = Math.min(stanceCount/Math.max(words.length,1)*10, 1);
-  const controversialTopics = ["politics","religion","ai","crypto","gender","race","vaccine","climate"];
-  const topicHit = controversialTopics.some(t=>text.toLowerCase().includes(t)) ? 0.3 : 0.1;
-  fv.controversy_index = clamp(topicHit * stanceStrength);
-
-  // Readability
-  const sentences = text.split(/[.!?]+/).filter(s=>s.trim().length>0);
-  const shortRatio = sentences.filter(s=>s.trim().split(/\s+/).length<=12).length / Math.max(sentences.length,1);
-  const avgWordLen = lowerWords.reduce((a,w)=>a+w.length,0)/Math.max(lowerWords.length,1);
-  const whitespaceRatio = (text.match(/\n/g)||[]).length / Math.max(text.length/50, 1);
-  const fkApprox = Math.max(0, 1 - (avgWordLen*0.8 + (words.length/Math.max(sentences.length,1))*0.3)/20);
-  fv.readability_score = clamp(0.4*fkApprox + 0.3*shortRatio + 0.2*Math.max(0,1-avgWordLen/10) + 0.1*Math.min(whitespaceRatio,1));
-
-  // Structure score
-  const detected = detectPatterns(text);
-  if(Object.keys(detected).length===0){
-    fv.structure_score=0;
-  }else{
-    const scores = Object.values(detected).sort((a,b)=>b-a);
-    fv.structure_score = clamp(scores[0] + (scores.length>1 ? 0.3*scores[1] : 0));
-  }
-
-  // Timing (use current time)
-  const now = new Date();
-  const hour = now.getUTCHours();
-  const dow = now.getUTCDay();
-  // Engagement heatmap: peak hours 12-15 UTC (US morning), 17-21 UTC (US afternoon/evening)
-  const peakHours = {8:0.6,9:0.7,10:0.7,11:0.75,12:0.85,13:0.9,14:0.9,15:0.85,16:0.8,17:0.85,18:0.9,19:0.95,20:0.9,21:0.8,22:0.7};
-  const hourScore = peakHours[hour] || 0.4;
-  // Weekday bonus (Tue-Thu best)
-  const dowBonus = [0.85,0.9,0.95,0.95,0.9,0.8,0.8][dow];
-  fv.timing_score = clamp(hourScore * dowBonus);
-
-  // Trend alignment (heuristic: check for trending-style words)
-  const trendWords = ["ai","gpt","chatgpt","openai","claude","llm","startup","founder","saas","remote","layoff","tech","bitcoin","ethereum","crypto"];
-  const trendHits = lowerWords.filter(w=>trendWords.includes(w)).length;
-  fv.trend_alignment = clamp(trendHits * 0.2);
-
-  // Post length normalized
-  const postLenNorm = Math.min(text.length/280, 1);
-
-  // Media (none for text-only)
-  const mediaIdx = 0;
-  const mediaBonus = {0:0,1:0.15,2:0.20,3:0.08,4:0.10};
-  const formatScore = clamp((mediaBonus[mediaIdx]||0) + 0.3*(1-postLenNorm));
-
-  // Author baseline
-  const followerLog = Math.log10(Math.max(followers,1));
-  const authorBaseline = Math.min(followerLog/7*0.3, 0.3);
-
-  // --- Composite Score ---
-  let raw = WEIGHTS.hook * fv.hook_strength
-    + WEIGHTS.emotion * fv.emotional_intensity
-    + WEIGHTS.curiosity * fv.curiosity_gap
-    + WEIGHTS.structure * fv.structure_score
-    + WEIGHTS.readability * fv.readability_score
-    + WEIGHTS.timing * fv.timing_score
-    + WEIGHTS.trend * fv.trend_alignment
-    + WEIGHTS.controversy * fv.controversy_index
-    + WEIGHTS.format * formatScore;
-
-  raw += INTERACTION_COEFFICIENTS.hook_x_curiosity * fv.hook_strength * fv.curiosity_gap;
-  raw += INTERACTION_COEFFICIENTS.trend_x_timing * fv.trend_alignment * fv.timing_score;
-  raw += INTERACTION_COEFFICIENTS.emotion_x_controversy * fv.emotional_intensity * fv.controversy_index;
-  raw += INTERACTION_COEFFICIENTS.controversy_penalty * Math.max(0, fv.controversy_index - 0.7);
-  raw += authorBaseline;
-
-  const finalScore = sigmoid(raw * 5 - 2.5);
-
-  // Impressions
-  let p50=5000000, p75=8000000, p90=15000000;
-  for(const[lo,hi,ceiling] of IMPRESSION_BUCKETS){
-    if(finalScore>=lo && finalScore<hi){
-      const frac = (finalScore-lo)/(hi-lo);
-      p50=Math.floor(ceiling*frac*0.5);
-      p75=Math.floor(ceiling*frac*0.8);
-      p90=Math.floor(ceiling*frac*1.2);
-      break;
-    }
-  }
-
-  // Category
-  let category;
-  if(finalScore>=0.85) category='high_potential';
-  else if(finalScore>=0.70) category='medium_potential';
-  else if(finalScore>=0.50) category='moderate';
-  else category='low_potential';
-
-  // Weaknesses
-  const weaknesses = [];
-  for(const[feat,threshold] of Object.entries(WEAKNESS_THRESHOLDS)){
-    const val = fv[feat]||0;
-    if(val < threshold) weaknesses.push(feat+' = '+(val*100).toFixed(0)+'%');
-  }
-
-  return {
-    score:{
-      raw_score:raw, final_score:finalScore,
-      predicted_impressions_p50:p50, predicted_impressions_p75:p75, predicted_impressions_p90:p90,
-      feature_breakdown:fv, weaknesses, category
-    },
-    formatScore, postLenNorm, detected
-  };
-}
-
-function curiosityGapScore(text){
-  let score=0;
-  for(const pat of CURIOSITY_PATTERNS){
-    if(pat.test(text)) score+=0.15;
-  }
-  if(text.trim().endsWith(':')) score+=0.1;
-  if(text.trim().endsWith('...')) score+=0.08;
-  if(text.includes('?')) score+=0.05;
-  return clamp(score);
-}
-
-function patternInterruptScore(text){
-  let score=0;
-  if(/^[A-Z]{2,}/.test(text)) score+=0.3;
-  if(/^\d/.test(text)) score+=0.2;
-  if(/[!]{2,}/.test(text)) score+=0.1;
-  if(text.length<50) score+=0.15;
-  if(/^(stop|don'?t|never|wrong|no one)/i.test(text)) score+=0.25;
-  return clamp(score);
-}
-
-function detectPatterns(text){
-  const results={};
-  const lower=text.toLowerCase().trim();
-  const words=lower.split(/\s+/);
-  const lines=text.trim().split('\n');
-
-  if(words[0]&&/^\d+$/.test(words[0])) results.LISTICLE=STRUCTURE_PATTERNS.LISTICLE;
-  if(['🧵','thread:','(1/'].some(m=>lower.includes(m))) results.THREAD_HOOK=STRUCTURE_PATTERNS.THREAD_HOOK;
-  if(['unpopular opinion','hot take','controversial take'].some(p=>lower.startsWith(p))) results.CONTRARIAN=STRUCTURE_PATTERNS.CONTRARIAN;
-  if(['i just','last week','last month','in 20'].some(p=>lower.startsWith(p))) results.STORY_OPEN=STRUCTURE_PATTERNS.STORY_OPEN;
-  if(words.length<=15 && lines.length===1 && !lower.includes('http')) results.ONE_LINER=STRUCTURE_PATTERNS.ONE_LINER;
-  if(text.trim().endsWith('?')) results.QUESTION=STRUCTURE_PATTERNS.QUESTION;
-  if(lower.includes(' vs ') || (lower.includes(' or ') && lower.endsWith('?'))) results.VERSUS=STRUCTURE_PATTERNS.VERSUS;
-  if(lower.includes('before:') && lower.includes('after:')) results.BEFORE_AFTER=STRUCTURE_PATTERNS.BEFORE_AFTER;
-
-  const hedgeWords=new Set(["maybe","perhaps","might","could","possibly","i think"]);
-  const superlatives=new Set(["best","worst","most","biggest","fastest","only","never","always","every"]);
-  const wordSet=new Set(words);
-  if(!text.trim().endsWith('?') && ![...hedgeWords].some(h=>wordSet.has(h)) && [...superlatives].some(s=>wordSet.has(s))){
-    results.BOLD_CLAIM=STRUCTURE_PATTERNS.BOLD_CLAIM;
-  }
-  return results;
-}
-
-// ---------------------------------------------------------------------------
-// Strategy Generation (client-side)
-// ---------------------------------------------------------------------------
-function generateStrategy(text, fv, detected){
-  const recommendations=[];
-  const hooks=[];
-
-  // Format suggestions
-  const formatSugs=[];
-  const lines=text.split('\n');
-  if(lines[0].length>40) formatSugs.push({rule:'line_break_after_hook',action:'Insert line break after first sentence',impact:0.04});
-  if((text.match(/\n/g)||[]).length>2 && !text.includes('→')) formatSugs.push({rule:'visual_separators',action:'Use → or • for scannability',impact:0.02});
-  if((text.match(/#/g)||[]).length>2) formatSugs.push({rule:'remove_hashtag_spam',action:'Reduce to 0-1 hashtags; move to end',impact:0.03});
-  if(formatSugs.length){
-    recommendations.push({type:'format',detail:{suggestions:formatSugs},score_delta:formatSugs.reduce((a,s)=>a+s.impact,0)});
-  }
-
-  // Trigger suggestions
-  const triggers=[];
-  const lower=text.toLowerCase();
-  if(fv.curiosity_gap<0.5 && !lower.endsWith(':')) triggers.push('curiosity_gap: End with colon or open question');
-  if(!text.includes('%') && !/\d/.test(text)) triggers.push('social_proof: Add specific numbers or percentages');
-  if(fv.emotional_intensity<0.5) triggers.push('loss_aversion: Reframe as what reader stands to lose');
-  if(triggers.length){
-    recommendations.push({type:'trigger',detail:{triggers},score_delta:0.05*triggers.length});
-  }
-
-  // Timing
-  const windows=[['Tuesday','13','0.95'],['Wednesday','14','0.93'],['Thursday','12','0.90']];
-  recommendations.push({type:'timing',detail:{optimal_windows:windows},score_delta:0.02});
-
-  // Hook variants (template-based)
-  const topic = extractTopic(text);
-  if(fv.hook_strength < WEAKNESS_THRESHOLDS.hook_strength){
-    hooks.push(
-      `The shocking truth about ${topic} that nobody talks about:`,
-      `I spent 1,000 hours studying ${topic}. Here's what I learned:`,
-      `Stop doing ${topic} wrong. Here's what actually works:`,
-      `Why 97% of people fail at ${topic} (and how to fix it):`,
-      `${topic} is broken. Here's proof:`
-    );
-  }
-
-  // Media recommendation
-  let mediaRec = 'none_or_screenshot';
-  if(Object.keys(detected).length>0) mediaRec='static_image_with_text_overlay';
-
-  // Thread
-  const wordCount=text.split(/\s+/).length;
-  const threadRec = (fv.hook_strength>=0.3 && wordCount>30)
-    ? {recommended:true,optimal_length:Math.min(Math.max(3,Math.floor(wordCount/40)),10)}
-    : {recommended:false,optimal_length:0};
-
-  // Hashtag
-  const hashCount=(text.match(/#\w+/g)||[]).length;
-  const hashStrategy = hashCount>2
-    ? {use:1,tags:[(text.match(/#\w+/)||[''])[0]],note:'Reduce to max 1 hashtag'}
-    : {use:hashCount,tags:(text.match(/#\w+/g)||[])};
-
-  // Engagement bait
-  let baitType='question_close';
-  if(text.trim().endsWith('?')) baitType='question_already_present';
-  else if(fv.controversy_index>0.5) baitType='agree_disagree';
-
-  return {recommendations,hook_variants:hooks,media_recommendation:mediaRec,
-    thread_expansion:threadRec,hashtag_strategy:hashStrategy,engagement_bait_type:baitType};
-}
-
-function extractTopic(text){
-  const words=text.toLowerCase().split(/\s+/).filter(w=>w.length>3);
-  const stopWords=new Set(['this','that','with','from','have','been','will','about','your','they','their','what','when','where','which','there','these','those','then','than','into','just','also','more','some','very','most','other','after','over','such','only']);
-  const filtered=words.filter(w=>!stopWords.has(w.replace(/[^a-z]/g,'')));
-  return filtered[0]||'this topic';
-}
 
 // ---------------------------------------------------------------------------
 // LLM Prompts
@@ -650,8 +312,7 @@ Core principles you follow:
 You respond ONLY in valid JSON. No markdown fences. No explanation outside JSON.
 IMPORTANT: All text values in the JSON (diagnosis, rewrites, hooks, strategies, advice) MUST be written in Japanese (日本語).`;
 
-function buildAnalyzePrompt(text, followers, features){
-  const featStr=Object.entries(features).map(([k,v])=>`${k}: ${(v*100).toFixed(0)}%`).join(', ');
+function buildAnalyzePrompt(text, followers){
   return `Analyze this X post and provide a complete virality optimization.
 
 POST:
@@ -659,9 +320,8 @@ POST:
 ${text}
 """
 
-CURRENT METRICS:
-- Author followers: ${followers.toLocaleString()}
-- Feature scores: ${featStr}
+AUTHOR INFO:
+- Followers: ${followers.toLocaleString()}
 
 Respond in this exact JSON format:
 {
@@ -901,39 +561,6 @@ function toggleSettings(){
 const _xk=['***REMOVED***','***REMOVED***','***REMOVED***'];
 const X_BEARER=atob(_xk.join(''));
 
-function analyze(){
-  const text=document.getElementById('text').value.trim();
-  if(!text)return;
-  const btn=document.getElementById('analyzeBtn');
-  const loading=document.getElementById('loading');
-  const results=document.getElementById('results');
-  btn.disabled=true;btn.textContent='分析中...';
-  loading.style.display='block';results.style.display='none';
-
-  // Simulate tiny async for UI smoothness
-  setTimeout(()=>{
-    try{
-      const followers=parseInt(document.getElementById('followers').value)||10000;
-      const engRate=parseFloat(document.getElementById('engrate').value)||0.02;
-      const {score,detected}=extractFeatures(text,followers,engRate);
-      const strategy=generateStrategy(text,score.feature_breakdown,detected);
-      const d={score,...strategy};
-      results.innerHTML=renderResult(d);
-      results.style.display='block';
-      saveHistory(text,score.final_score,score.category);
-      requestAnimationFrame(()=>{
-        const ring=document.querySelector('.ring-fill');
-        if(ring)ring.style.strokeDashoffset=ring.dataset.target;
-      });
-    }catch(e){
-      results.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">Error: '+escHtml(e.message)+'</div>';
-      results.style.display='block';
-    }finally{
-      btn.disabled=false;btn.textContent='投稿を分析';loading.style.display='none';
-    }
-  },50);
-}
-
 async function llmAnalyze(){
   const text=document.getElementById('text').value.trim();
   if(!text)return;
@@ -946,7 +573,6 @@ async function llmAnalyze(){
 
   try{
     const followers=parseInt(document.getElementById('followers').value)||10000;
-    const {score}=extractFeatures(text,followers,0.02);
 
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
@@ -960,7 +586,7 @@ async function llmAnalyze(){
         model:'claude-sonnet-4-20250514',
         max_tokens:4096,
         system:LLM_SYSTEM,
-        messages:[{role:'user',content:buildAnalyzePrompt(text,followers,score.feature_breakdown)}]
+        messages:[{role:'user',content:buildAnalyzePrompt(text,followers)}]
       })
     });
 
@@ -993,90 +619,15 @@ async function llmAnalyze(){
 // ---------------------------------------------------------------------------
 // Render helpers
 // ---------------------------------------------------------------------------
-function featColor(v){
-  if(v>=.7)return'#30d158';if(v>=.5)return'#ffd60a';if(v>=.3)return'#ff9f0a';return'#ff453a';
-}
 function scoreGradient(v){
   if(v>=.7)return['#30d158','#1c3829'];if(v>=.5)return['#ffd60a','#332d1a'];
   if(v>=.3)return['#ff9f0a','#33261a'];return['#ff453a','#331a1a'];
 }
-function catLabel(c){
-  return{high_potential:'高ポテンシャル',medium_potential:'中ポテンシャル',moderate:'普通',low_potential:'低ポテンシャル'}[c]||c;
-}
-function fmtNum(n){if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return String(n)}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function escJs(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\n/g,'\\n')}
 
 function copyText(text){navigator.clipboard.writeText(text).then(()=>showToast('コピーしました！')).catch(()=>{})}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1500)}
-
-function renderResult(d){
-  const s=d.score;const pct=s.final_score;const[ringCol,catBg]=scoreGradient(pct);
-  const circ=2*Math.PI*60;const offset=circ*(1-pct);
-  let h='';
-  h+='<div class="score-hero"><div class="ring-container">';
-  h+='<svg viewBox="0 0 140 140"><circle class="ring-bg" cx="70" cy="70" r="60"/>';
-  h+='<circle class="ring-fill" cx="70" cy="70" r="60" stroke="'+ringCol+'" stroke-dasharray="'+circ+'" stroke-dashoffset="'+circ+'" data-target="'+offset+'"/>';
-  h+='</svg><div class="ring-score" style="color:'+ringCol+'">'+(pct*100).toFixed(0)+'<br><span class="ring-label">スコア</span></div>';
-  h+='</div><div class="score-category" style="background:'+catBg+';color:'+ringCol+'">'+catLabel(s.category)+'</div>';
-  h+='<div class="impressions-row">';
-  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p50)+'</div><div class="label">予想imp(中央)</div></div>';
-  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p75)+'</div><div class="label">予想imp(上位)</div></div>';
-  h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p90)+'</div><div class="label">予想imp(最大)</div></div>';
-  h+='</div></div>';
-
-  h+='<div class="section-label">スコア内訳</div><div class="features-grid">';
-  const fnames={hook_strength:'つかみ',emotional_intensity:'感情',curiosity_gap:'気になる度',
-    controversy_index:'議論性',readability_score:'読みやすさ',structure_score:'構成',
-    timing_score:'投稿タイミング',trend_alignment:'トレンド'};
-  for(const[k,v]of Object.entries(s.feature_breakdown)){
-    const c=featColor(v);
-    h+='<div class="feat-card"><div class="feat-name">'+(fnames[k]||k)+'</div>';
-    h+='<div class="feat-val" style="color:'+c+'">'+(v*100).toFixed(0)+'</div>';
-    h+='<div class="feat-bar"><div class="feat-bar-fill" style="width:'+(v*100)+'%;background:'+c+'"></div></div></div>';
-  }
-  h+='</div>';
-
-  if(s.weaknesses&&s.weaknesses.length){
-    h+='<div class="section-label">弱点</div><div class="weakness-list">';
-    for(const w of s.weaknesses) h+='<div class="weakness-pill"><span class="icon">!</span><span>'+escHtml(w)+'</span></div>';
-    h+='</div>';
-  }
-
-  if(d.recommendations&&d.recommendations.length){
-    h+='<div class="section-label">改善提案</div><div class="rec-list">';
-    for(const r of d.recommendations){
-      const cls=r.type==='timing'?'timing':r.type==='format'?'format':r.type==='trigger'?'trigger':'';
-      const typeJa={rewrite:'リライト',timing:'タイミング',format:'フォーマット',trigger:'トリガー'};
-      h+='<div class="rec-card '+cls+'"><div class="rec-header"><span class="rec-tag">'+(typeJa[r.type]||r.type)+'</span>';
-      h+='<span class="rec-delta">'+(r.score_delta>=0?'+':'')+r.score_delta.toFixed(3)+'</span></div>';
-      h+='<div class="rec-body">';
-      if(r.type==='format'&&r.detail.suggestions) for(const sg of r.detail.suggestions) h+='<div>'+escHtml(sg.action)+'</div>';
-      else if(r.type==='trigger'&&r.detail.triggers) for(const t of r.detail.triggers) h+='<div>'+escHtml(t)+'</div>';
-      else if(r.type==='timing'&&r.detail.optimal_windows) for(const w of r.detail.optimal_windows) h+='<div>'+w[0]+' '+w[1]+':00 UTC</div>';
-      h+='</div></div>';
-    }
-    h+='</div>';
-  }
-
-  if(d.hook_variants&&d.hook_variants.length){
-    h+='<div class="section-label">フック候補</div><div class="hooks-list">';
-    d.hook_variants.forEach((hk,i)=>{
-      h+='<div class="hook-card" onclick="copyText(\''+escJs(hk)+'\')">';
-      h+='<div class="hook-num">'+(i+1)+'</div><div class="hook-text">'+escHtml(hk)+'</div>';
-      h+='<div class="hook-copy">コピー</div></div>';
-    });
-    h+='</div>';
-  }
-
-  h+='<div class="section-label">詳細</div><div class="meta-grid">';
-  h+='<div class="meta-item"><div class="meta-label">メディア</div><div class="meta-value">'+escHtml(d.media_recommendation).replace(/_/g,' ')+'</div></div>';
-  h+='<div class="meta-item"><div class="meta-label">CTA</div><div class="meta-value">'+escHtml(d.engagement_bait_type).replace(/_/g,' ')+'</div></div>';
-  h+='<div class="meta-item"><div class="meta-label">スレッド</div><div class="meta-value">'+(d.thread_expansion.recommended?d.thread_expansion.optimal_length+'件投稿':'不要')+'</div></div>';
-  h+='<div class="meta-item"><div class="meta-label">ハッシュタグ</div><div class="meta-value">'+(d.hashtag_strategy.tags&&d.hashtag_strategy.tags.length?d.hashtag_strategy.tags.join(' '):'なし')+'</div></div>';
-  h+='</div>';
-  return h;
-}
 
 function renderLLM(d){
   let h='';
