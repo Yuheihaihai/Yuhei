@@ -246,8 +246,17 @@ body{
 }
 .past-textarea::placeholder{color:#636366}
 .past-textarea:focus{outline:none;box-shadow:0 0 0 2px #1d9bf0}
+.past-btn-row{display:flex;gap:8px;margin-top:10px}
+.past-fetch-btn{
+  flex:0 0 auto;padding:14px 18px;border:1px solid #1d9bf0;border-radius:14px;
+  font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;
+  background:transparent;color:#1d9bf0;transition:all .15s;white-space:nowrap;
+}
+.past-fetch-btn:hover{background:#1d9bf011}
+.past-fetch-btn:active{transform:scale(.98)}
+.past-fetch-btn:disabled{border-color:#48484a;color:#48484a;cursor:default;transform:none}
 .past-posts-btn{
-  width:100%;padding:14px;margin-top:10px;border:none;border-radius:14px;
+  flex:1;padding:14px;border:none;border-radius:14px;
   font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;
   background:#1d9bf0;color:#fff;transition:all .15s;
 }
@@ -321,9 +330,12 @@ body{
   <div class="llm-results" id="llmResults"></div>
   <div class="past-section">
     <div class="past-header">過去の投稿を分析</div>
-    <div class="past-desc">Xの自分のプロフィールから過去の投稿をコピーして貼り付けてください。<br>AIがパターンを分析し、バズるコンテンツ戦略を提案します。</div>
-    <textarea id="pastInput" class="past-textarea" placeholder="過去の投稿を貼り付け...&#10;&#10;例:&#10;今日はいい天気だった&#10;&#10;プログラミング楽しい&#10;&#10;新しいカフェ見つけた"></textarea>
-    <button class="past-posts-btn" id="pastPostsBtn" onclick="analyzePastPosts()">過去の投稿をAI分析</button>
+    <div class="past-desc">「自動取得」で投稿を取得するか、手動でコピー＆貼り付けしてください。</div>
+    <textarea id="pastInput" class="past-textarea" placeholder="過去の投稿を貼り付け（又は自動取得ボタンを押す）"></textarea>
+    <div class="past-btn-row">
+      <button class="past-fetch-btn" id="pastFetchBtn" onclick="fetchPastPosts()">自動取得</button>
+      <button class="past-posts-btn" id="pastPostsBtn" onclick="analyzePastPosts()">AI分析</button>
+    </div>
   </div>
   <div class="past-loading" id="pastLoading">
     <div class="loading-ring"></div>
@@ -761,6 +773,79 @@ function renderHistory(){
 }
 function loadHistory(text){document.getElementById('text').value=text;updateCharCount();window.scrollTo({top:0,behavior:'smooth'})}
 function clearHistory(){historyArr=[];localStorage.removeItem('ve_history');renderHistory()}
+
+// ---------------------------------------------------------------------------
+// Past Posts — Auto-fetch from X syndication API (no server needed)
+// ---------------------------------------------------------------------------
+async function fetchPastPosts(){
+  const username=localStorage.getItem('ve_auth')||'';
+  if(!username){showToast('ログインしてください');return;}
+
+  const btn=document.getElementById('pastFetchBtn');
+  const ta=document.getElementById('pastInput');
+  btn.disabled=true;btn.textContent='取得中...';
+
+  try{
+    // X syndication API — used by embedded timelines, CORS-enabled
+    const resp=await fetch(
+      'https://syndication.twitter.com/srv/timeline-profile/screen-name/'+encodeURIComponent(username),
+      {headers:{'Accept':'text/html'},signal:AbortSignal.timeout(10000)}
+    );
+
+    if(!resp.ok) throw new Error('取得失敗 ('+resp.status+')');
+
+    const html=await resp.text();
+
+    // Parse the HTML to extract tweet texts
+    const doc=new DOMParser().parseFromString(html,'text/html');
+
+    // Syndication timeline uses various selectors depending on version
+    let tweets=[];
+
+    // Try modern format: data attributes and article elements
+    const articles=doc.querySelectorAll('[data-tweet-id]');
+    if(articles.length){
+      articles.forEach(el=>{
+        const textEl=el.querySelector('.tweet-text, .timeline-Tweet-text, [data-testid="tweetText"], p');
+        if(textEl) tweets.push(textEl.textContent.trim());
+      });
+    }
+
+    // Fallback: try extracting from any p tags inside tweet containers
+    if(!tweets.length){
+      const containers=doc.querySelectorAll('.timeline-Tweet, .tweet, article');
+      containers.forEach(el=>{
+        const p=el.querySelector('p');
+        if(p&&p.textContent.trim()) tweets.push(p.textContent.trim());
+      });
+    }
+
+    // Last resort: extract all meaningful text blocks
+    if(!tweets.length){
+      const allP=doc.querySelectorAll('p');
+      allP.forEach(p=>{
+        const t=p.textContent.trim();
+        if(t.length>5&&!t.startsWith('http')) tweets.push(t);
+      });
+    }
+
+    if(!tweets.length) throw new Error('投稿を抽出できませんでした。手動で貼り付けてください。');
+
+    // Deduplicate and populate textarea
+    tweets=[...new Set(tweets)];
+    ta.value=tweets.join('\n\n');
+    showToast(tweets.length+'件の投稿を取得しました');
+
+  }catch(e){
+    if(e.name==='TimeoutError'||e.message.includes('Failed to fetch')||e.message.includes('NetworkError')||e.message.includes('TypeError')){
+      showToast('自動取得できません。手動で貼り付けてください。');
+    }else{
+      showToast(e.message);
+    }
+  }finally{
+    btn.disabled=false;btn.textContent='自動取得';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Past Posts Analysis — Paste tweets and analyze with Claude (no server needed)
