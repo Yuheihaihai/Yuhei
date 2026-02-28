@@ -179,6 +179,12 @@ body{
 .login-screen .login-icon{font-size:48px;margin-bottom:20px}
 .login-screen h2{font-size:24px;font-weight:700;margin-bottom:8px}
 .login-screen .login-sub{font-size:14px;color:#86868b;margin-bottom:32px;line-height:1.5}
+.handle-input{
+  width:100%;max-width:320px;padding:14px 16px;border:1px solid #3a3a3c;border-radius:14px;
+  font-size:17px;font-family:inherit;background:#1c1c1e;color:#f5f5f7;
+  text-align:center;outline:none;transition:border-color .2s;box-sizing:border-box;
+}
+.handle-input:focus{border-color:#1d9bf0}
 .login-btn{
   width:100%;max-width:320px;padding:16px;margin-top:16px;border:none;border-radius:14px;
   font-size:17px;font-weight:600;font-family:inherit;cursor:pointer;
@@ -236,8 +242,9 @@ body{
 <div class="login-screen" id="loginScreen">
   <div class="login-icon">X</div>
   <h2>Virality Engine</h2>
-  <div class="login-sub">Xアカウントでログインしてください。<br>許可されたアカウントのみ利用可能です。</div>
-  <button class="login-btn" id="loginBtn" onclick="startOAuth()">Xでログイン</button>
+  <div class="login-sub">Xアカウントのハンドル名を入力してログインしてください。<br>許可されたアカウントのみ利用可能です。</div>
+  <input type="text" id="handleInput" class="handle-input" placeholder="@lovejesusYT" autocomplete="username" autocapitalize="none" spellcheck="false">
+  <button class="login-btn" id="loginBtn" onclick="handleLogin()">ログイン</button>
   <div class="login-error" id="loginError"></div>
   <div class="login-footer">Authorized users only</div>
 </div>
@@ -705,115 +712,25 @@ Respond in this exact JSON format:
 }
 
 // ---------------------------------------------------------------------------
-// Auth — X OAuth 2.0 PKCE
+// Auth — Handle-based login
 // ---------------------------------------------------------------------------
-const OAUTH_CLIENT_ID='dzlMT1BzWUVVRGZVTjFBaDY0Unc6MTpjaQ';
-const OAUTH_REDIRECT=location.href.split('?')[0].split('#')[0];
 const ALLOWED_HANDLES=['lovejesusyt'];
 
-// PKCE helpers
-function generateCodeVerifier(){
-  const arr=new Uint8Array(32);
-  crypto.getRandomValues(arr);
-  return btoa(String.fromCharCode(...arr)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-async function generateCodeChallenge(verifier){
-  const enc=new TextEncoder().encode(verifier);
-  const digest=await crypto.subtle.digest('SHA-256',enc);
-  return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-
-async function startOAuth(){
-  const btn=document.getElementById('loginBtn');
-  btn.disabled=true;btn.textContent='リダイレクト中...';
-
-  const verifier=generateCodeVerifier();
-  const challenge=await generateCodeChallenge(verifier);
-  const state=crypto.randomUUID();
-
-  sessionStorage.setItem('oauth_verifier',verifier);
-  sessionStorage.setItem('oauth_state',state);
-
-  const params=new URLSearchParams({
-    response_type:'code',
-    client_id:OAUTH_CLIENT_ID,
-    redirect_uri:OAUTH_REDIRECT,
-    scope:'tweet.read users.read',
-    state:state,
-    code_challenge:challenge,
-    code_challenge_method:'S256'
-  });
-  location.href='https://x.com/i/oauth2/authorize?'+params.toString();
-}
-
-async function handleOAuthCallback(){
-  const params=new URLSearchParams(location.search);
-  const code=params.get('code');
-  const state=params.get('state');
-  if(!code)return false;
-
-  const savedState=sessionStorage.getItem('oauth_state');
-  const verifier=sessionStorage.getItem('oauth_verifier');
-  if(!savedState||state!==savedState||!verifier){
-    showLoginError('認証エラー: state不一致。もう一度ログインしてください。');
-    history.replaceState(null,'',OAUTH_REDIRECT);
-    return true;
+function handleLogin(){
+  const input=document.getElementById('handleInput');
+  const raw=input.value.trim().replace(/^@/,'');
+  if(!raw){
+    showLoginError('ハンドル名を入力してください。');
+    return;
   }
-
-  // Clean URL
-  history.replaceState(null,'',OAUTH_REDIRECT);
-  sessionStorage.removeItem('oauth_state');
-  sessionStorage.removeItem('oauth_verifier');
-
-  const err=document.getElementById('loginError');
-  const btn=document.getElementById('loginBtn');
-  btn.disabled=true;btn.textContent='認証中...';
-
-  try{
-    // Exchange code for token
-    const tokenResp=await fetch('https://api.x.com/2/oauth2/token',{
-      method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:new URLSearchParams({
-        grant_type:'authorization_code',
-        code:code,
-        redirect_uri:OAUTH_REDIRECT,
-        client_id:OAUTH_CLIENT_ID,
-        code_verifier:verifier
-      })
-    });
-
-    if(!tokenResp.ok){
-      const errData=await tokenResp.text();
-      throw new Error('Token exchange failed: '+tokenResp.status);
-    }
-    const tokenData=await tokenResp.json();
-    const accessToken=tokenData.access_token;
-
-    // Get user profile
-    const userResp=await fetch('https://api.x.com/2/users/me',{
-      headers:{'Authorization':'Bearer '+accessToken}
-    });
-    if(!userResp.ok) throw new Error('Failed to fetch user profile');
-    const userData=await userResp.json();
-    const username=userData.data.username.toLowerCase();
-
-    // Check allowed list
-    if(!ALLOWED_HANDLES.includes(username)){
-      showLoginError('このアカウント (@'+userData.data.username+') は許可されていません。');
-      btn.disabled=false;btn.textContent='Xでログイン';
-      return true;
-    }
-
-    // Success!
-    localStorage.setItem('ve_auth',username);
-    localStorage.setItem('ve_auth_name',userData.data.name||username);
-    showApp();
-  }catch(e){
-    showLoginError('認証エラー: '+e.message);
-    btn.disabled=false;btn.textContent='Xでログイン';
+  const username=raw.toLowerCase();
+  if(!ALLOWED_HANDLES.includes(username)){
+    showLoginError('このアカウント (@'+raw+') は許可されていません。');
+    return;
   }
-  return true;
+  localStorage.setItem('ve_auth',username);
+  localStorage.setItem('ve_auth_name',raw);
+  showApp();
 }
 
 function showLoginError(msg){
@@ -842,12 +759,10 @@ function logout(){
 }
 
 // Boot
-document.addEventListener('DOMContentLoaded',async()=>{
+document.addEventListener('DOMContentLoaded',()=>{
   if(checkSession())return;
-  const handled=await handleOAuthCallback();
-  if(!handled){
-    // Show login screen (already visible by default)
-  }
+  const input=document.getElementById('handleInput');
+  if(input) input.addEventListener('keydown',e=>{if(e.key==='Enter')handleLogin();});
 });
 
 // ---------------------------------------------------------------------------
