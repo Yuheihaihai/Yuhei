@@ -321,9 +321,17 @@ body{
   <div class="llm-results" id="llmResults"></div>
   <div class="past-section">
     <div class="past-header">過去の投稿を分析</div>
-    <div class="past-desc">Xアプリで自分のプロフィールを開き、投稿を選択してコピー→ここに貼り付け。<br>投稿ごとに空行で区切ってください。</div>
-    <textarea id="pastInput" class="past-textarea" placeholder="ここに過去の投稿を貼り付け&#10;&#10;（投稿ごとに空行で区切る）"></textarea>
-    <button class="past-posts-btn" id="pastPostsBtn" onclick="analyzePastPosts()">AI分析</button>
+    <div class="past-desc" id="pastDesc">Xから自動取得を試みます。取得できない場合はペーストで分析できます。</div>
+    <div id="autoFetchArea" style="margin-bottom:12px">
+      <button class="past-posts-btn" id="autoFetchBtn" onclick="autoFetchTweets()" style="background:linear-gradient(135deg,#1d9bf0,#0a66c2)">自動取得して分析</button>
+    </div>
+    <div id="pastManualArea" style="display:none">
+      <textarea id="pastInput" class="past-textarea" placeholder="ここに過去の投稿を貼り付け&#10;&#10;（投稿ごとに空行で区切る）"></textarea>
+      <button class="past-posts-btn" id="pastPostsBtn" onclick="analyzePastPosts()">ペーストしたデータをAI分析</button>
+    </div>
+    <div style="text-align:center;margin-top:8px">
+      <span id="toggleManual" style="font-size:12px;color:#86868b;cursor:pointer;text-decoration:underline" onclick="toggleManualPaste()">手動ペーストに切り替え</span>
+    </div>
   </div>
   <div class="past-loading" id="pastLoading">
     <div class="loading-ring"></div>
@@ -816,11 +824,119 @@ ${numbered}
 top_postsはバイラル可能性が高い順に最大5件。winning_patternsは最大5件。content_recommendationsは最大3件。`;
 }
 
+// Toggle between auto-fetch and manual paste
+function toggleManualPaste(){
+  const manual=document.getElementById('pastManualArea');
+  const auto=document.getElementById('autoFetchArea');
+  const toggle=document.getElementById('toggleManual');
+  if(manual.style.display==='none'){
+    manual.style.display='block';
+    toggle.textContent='自動取得に戻す';
+  }else{
+    manual.style.display='none';
+    toggle.textContent='手動ペーストに切り替え';
+  }
+}
+
+// Auto-fetch tweets via server proxy (/api/user-tweets)
+async function autoFetchTweets(){
+  const username=localStorage.getItem('ve_auth')||'';
+  if(!username){showToast('ログインしてください');return;}
+
+  const btn=document.getElementById('autoFetchBtn');
+  const ld=document.getElementById('pastLoading');
+  const res=document.getElementById('pastResults');
+  btn.disabled=true;btn.textContent='取得中...';ld.style.display='block';res.style.display='none';
+  ld.querySelector('.loading-text').textContent='Xから投稿を取得中...';
+
+  try{
+    // Try server proxy endpoint
+    const proxyUrl=location.origin+'/api/user-tweets';
+    const resp=await fetch(proxyUrl,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:username,bearer_token:X_BEARER,count:30}),
+      signal:AbortSignal.timeout(10000)
+    });
+
+    if(!resp.ok){
+      const err=await resp.json().catch(()=>({}));
+      throw new Error(err.error||'取得失敗 ('+resp.status+')');
+    }
+
+    const data=await resp.json();
+    if(data.error) throw new Error(data.error);
+
+    const tweets=data.tweets||[];
+    if(tweets.length===0) throw new Error('投稿が見つかりません');
+
+    // Extract text and run AI analysis
+    const posts=tweets.map(t=>t.text).filter(t=>t&&t.trim().length>0);
+    ld.querySelector('.loading-text').textContent='AIが'+posts.length+'件の投稿を分析中...';
+
+    await runPastPostsAI(posts, username, res);
+    res.style.display='block';
+  }catch(e){
+    // Auto-fetch failed — show manual paste and explain
+    console.warn('Auto-fetch failed:',e.message);
+    document.getElementById('pastManualArea').style.display='block';
+    document.getElementById('pastDesc').innerHTML=
+      '<span style="color:#ff9f0a">自動取得できませんでした。</span><br>'+
+      'Xアプリで自分のプロフィールを開き、投稿をコピー→下に貼り付けてください。<br>投稿ごとに空行で区切ってください。';
+    document.getElementById('toggleManual').textContent='自動取得に戻す';
+    showToast('自動取得失敗 — ペーストで分析できます');
+  }finally{
+    btn.disabled=false;btn.textContent='自動取得して分析';ld.style.display='none';
+    ld.querySelector('.loading-text').textContent='AIが過去の投稿を分析中...';
+  }
+}
+
+// Shared AI analysis function for both auto-fetch and paste
+async function runPastPostsAI(posts, username, resEl){
+  const _k=['***REMOVED***','***REMOVED***','***REMOVED***','***REMOVED***'];
+  const apiKey=atob(_k.join(''));
+
+  const aiResp=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key':apiKey,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:4096,
+      system:PAST_POSTS_SYSTEM,
+      messages:[{role:'user',content:buildPastPostsPrompt(posts,username)}]
+    })
+  });
+
+  if(!aiResp.ok){
+    const errBody=await aiResp.text();
+    throw new Error('AI分析エラー '+aiResp.status+': '+errBody.substring(0,200));
+  }
+
+  const aiData=await aiResp.json();
+  const rawText=aiData.content[0].text.trim();
+  let parsed={};
+  try{
+    const start=rawText.indexOf('{');
+    const end=rawText.lastIndexOf('}');
+    if(start>=0&&end>start) parsed=JSON.parse(rawText.substring(start,end+1));
+  }catch(e){parsed={}}
+
+  if(Object.keys(parsed).length===0){
+    resEl.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">AI応答の解析に失敗しました</div>';
+  }else{
+    resEl.innerHTML=renderPastPostsAnalysis(parsed,username);
+  }
+}
+
 async function analyzePastPosts(){
   const raw=document.getElementById('pastInput').value.trim();
   if(!raw){showToast('過去の投稿を貼り付けてください');return;}
 
-  // Split by double newline or treat each non-empty line as a post
   const posts=raw.split(/\n\s*\n/).map(p=>p.trim()).filter(p=>p.length>0);
   if(posts.length<2){showToast('2件以上の投稿を貼り付けてください');return;}
 
@@ -829,48 +945,10 @@ async function analyzePastPosts(){
   const ld=document.getElementById('pastLoading');
   const res=document.getElementById('pastResults');
   btn.disabled=true;ld.style.display='block';res.style.display='none';
+  ld.querySelector('.loading-text').textContent='AIが'+posts.length+'件の投稿を分析中...';
 
   try{
-    ld.querySelector('.loading-text').textContent='AIが'+posts.length+'件の投稿を分析中...';
-
-    const _k=['***REMOVED***','***REMOVED***','***REMOVED***','***REMOVED***'];
-    const apiKey=atob(_k.join(''));
-
-    const aiResp=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'x-api-key':apiKey,
-        'anthropic-version':'2023-06-01',
-        'anthropic-dangerous-direct-browser-access':'true'
-      },
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:4096,
-        system:PAST_POSTS_SYSTEM,
-        messages:[{role:'user',content:buildPastPostsPrompt(posts,username)}]
-      })
-    });
-
-    if(!aiResp.ok){
-      const errBody=await aiResp.text();
-      throw new Error('AI分析エラー '+aiResp.status+': '+errBody.substring(0,200));
-    }
-
-    const aiData=await aiResp.json();
-    const rawText=aiData.content[0].text.trim();
-    let parsed={};
-    try{
-      const start=rawText.indexOf('{');
-      const end=rawText.lastIndexOf('}');
-      if(start>=0&&end>start) parsed=JSON.parse(rawText.substring(start,end+1));
-    }catch(e){parsed={}}
-
-    if(Object.keys(parsed).length===0){
-      res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">AI応答の解析に失敗しました</div>';
-    }else{
-      res.innerHTML=renderPastPostsAnalysis(parsed,username);
-    }
+    await runPastPostsAI(posts, username, res);
     res.style.display='block';
   }catch(e){
     res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a;font-size:14px">'+escHtml(e.message)+'</div>';
