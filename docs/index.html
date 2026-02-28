@@ -1078,7 +1078,7 @@ function renderResult(d){
 
 function renderLLM(d){
   let h='';
-  h+='<div class="llm-hero"><div class="llm-score-big">'+(d.viral_score||'?')+'</div>';
+  h+='<div class="llm-hero"><div class="llm-score-big">'+(d.viral_score||'?')+'<span style="font-size:20px;opacity:.5"> / 100</span></div>';
   h+='<div class="llm-score-label">AIバイラルポテンシャル（最適化後）</div></div>';
 
   if(d.diagnosis){
