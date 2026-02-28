@@ -836,6 +836,80 @@ def api_llm_analyze():
     })
 
 
+@app.route("/api/user-tweets", methods=["POST", "OPTIONS"])
+def api_user_tweets():
+    """Proxy to fetch a user's recent tweets from X API v2 (avoids CORS)."""
+    if request.method == "OPTIONS":
+        resp = app.make_default_options_response()
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        resp.headers["Access-Control-Allow-Methods"] = "POST"
+        return resp
+
+    data = request.get_json()
+    username = data.get("username", "").strip().lstrip("@")
+    bearer = data.get("bearer_token", "")
+    count = min(int(data.get("count", 30)), 100)
+
+    if not username or not bearer:
+        resp = jsonify({"error": "username and bearer_token are required"})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp, 400
+
+    headers = {"Authorization": f"Bearer {bearer}"}
+
+    # Step 1: Look up user ID by username
+    user_resp = http_requests.get(
+        f"https://api.x.com/2/users/by/username/{username}",
+        headers=headers,
+        params={"user.fields": "public_metrics"},
+    )
+    if not user_resp.ok:
+        resp = jsonify({"error": f"ユーザー取得に失敗しました ({user_resp.status_code})"})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp, 400
+
+    user_json = user_resp.json()
+    if "data" not in user_json:
+        resp = jsonify({"error": "ユーザーが見つかりません"})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp, 404
+
+    user_data = user_json["data"]
+    user_id = user_data["id"]
+
+    # Step 2: Fetch the user's recent tweets with engagement metrics
+    tweets_resp = http_requests.get(
+        f"https://api.x.com/2/users/{user_id}/tweets",
+        headers=headers,
+        params={
+            "max_results": count,
+            "tweet.fields": "public_metrics,created_at,text",
+            "exclude": "retweets,replies",
+        },
+    )
+    if not tweets_resp.ok:
+        resp = jsonify({"error": f"投稿の取得に失敗しました ({tweets_resp.status_code})"})
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp, 400
+
+    tweets_json = tweets_resp.json()
+    tweets = tweets_json.get("data", [])
+
+    resp = jsonify({
+        "user": {
+            "id": user_id,
+            "username": user_data["username"],
+            "name": user_data.get("name", ""),
+            "metrics": user_data.get("public_metrics", {}),
+        },
+        "tweets": tweets,
+        "count": len(tweets),
+    })
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
 @app.route("/api/auth/exchange", methods=["POST", "OPTIONS"])
 def api_auth_exchange():
     """Proxy X OAuth 2.0 token exchange to avoid CORS issues on static sites."""

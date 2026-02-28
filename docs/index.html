@@ -235,6 +235,39 @@ body{
 .advice-row{padding:8px 0;border-bottom:1px solid #2c2c2e;font-size:13px;line-height:1.5}
 .advice-row:last-child{border-bottom:none}
 .advice-row .adv-label{font-size:11px;color:#86868b;margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px}
+/* ===== Past Posts Analysis ===== */
+.past-posts-btn{
+  width:100%;padding:14px;margin-top:10px;border:1px solid #1d9bf0;border-radius:14px;
+  font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;
+  background:transparent;color:#1d9bf0;transition:all .15s;
+}
+.past-posts-btn:hover{background:#1d9bf011}
+.past-posts-btn:active{transform:scale(.98)}
+.past-posts-btn:disabled{border-color:#48484a;color:#48484a;cursor:default;transform:none}
+.past-loading{display:none;text-align:center;padding:40px 0}
+.past-loading .loading-ring{border-top-color:#1d9bf0}
+.past-loading .loading-text{color:#1d9bf0}
+.past-results{display:none;margin-top:20px;animation:fadeUp .4s ease}
+.past-hero{
+  background:linear-gradient(135deg,#0a1a2e,#0a2d1e);
+  border:1px solid #1d9bf033;border-radius:18px;padding:22px;text-align:center;margin-bottom:16px;
+}
+.past-hero .past-title{font-size:20px;font-weight:700;color:#1d9bf0;margin-bottom:4px}
+.past-hero .past-sub{font-size:13px;color:#86868b}
+.top-post{background:#1c1c1e;border-radius:14px;padding:16px;margin-bottom:8px;border-left:3px solid #1d9bf0}
+.top-post .top-rank{font-size:11px;font-weight:700;color:#1d9bf0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.top-post .top-text{font-size:14px;line-height:1.5;color:#f5f5f7;margin-bottom:8px;white-space:pre-wrap}
+.top-post .top-metrics{display:flex;gap:12px;flex-wrap:wrap}
+.top-post .top-metric{font-size:12px;color:#86868b}
+.top-post .top-metric span{color:#1d9bf0;font-weight:600}
+.pattern-card{background:#1c1c1e;border-radius:14px;padding:16px;margin-bottom:8px}
+.pattern-card .pattern-title{font-size:13px;font-weight:600;color:#30d158;margin-bottom:8px}
+.pattern-card .pattern-body{font-size:13px;line-height:1.5;color:#f5f5f7}
+.pattern-card .pattern-item{padding:6px 0;border-bottom:1px solid #2c2c2e}
+.pattern-card .pattern-item:last-child{border-bottom:none}
+.content-rec{background:#1c1c1e;border-radius:14px;padding:16px;margin-bottom:8px;border-left:3px solid #bf5af2}
+.content-rec .rec-title{font-size:13px;font-weight:600;color:#bf5af2;margin-bottom:6px}
+.content-rec .rec-text{font-size:13px;line-height:1.5;color:#f5f5f7}
 </style>
 </head>
 <body>
@@ -270,12 +303,18 @@ body{
       <input id="engrate" type="number" step="0.001" placeholder="エンゲージ率" value="0.02">
     </div>
     <button class="llm-btn" id="llmBtn" onclick="llmAnalyze()" style="width:100%;margin-top:16px">AI分析<span class="badge">Claude</span></button>
+    <button class="past-posts-btn" id="pastPostsBtn" onclick="analyzePastPosts()">過去の投稿を分析</button>
   </div>
   <div class="llm-loading" id="llmLoading">
     <div class="loading-ring"></div>
     <div class="loading-text">AIが投稿を最適化中...</div>
   </div>
   <div class="llm-results" id="llmResults"></div>
+  <div class="past-loading" id="pastLoading">
+    <div class="loading-ring"></div>
+    <div class="loading-text">過去の投稿を取得・分析中...</div>
+  </div>
+  <div class="past-results" id="pastResults"></div>
   <div class="history" id="historySection" style="display:none">
     <div class="section-label">履歴</div>
     <div id="historyList"></div>
@@ -707,6 +746,240 @@ function renderHistory(){
 }
 function loadHistory(text){document.getElementById('text').value=text;updateCharCount();window.scrollTo({top:0,behavior:'smooth'})}
 function clearHistory(){historyArr=[];localStorage.removeItem('ve_history');renderHistory()}
+
+// ---------------------------------------------------------------------------
+// Past Posts Analysis — Fetch user's tweets and analyze with Claude
+// ---------------------------------------------------------------------------
+const TWEETS_PROXY=location.origin+'/api/user-tweets';
+
+const PAST_POSTS_SYSTEM=`You are an expert X (Twitter) content strategist.
+You analyze a user's past posts along with their engagement metrics to identify what content performs best.
+Your goal: find patterns in high-performing content and give actionable recommendations.
+
+You respond ONLY in valid JSON. No markdown fences. No explanation outside JSON.
+IMPORTANT: All text values in the JSON MUST be written in Japanese (日本語).`;
+
+function buildPastPostsPrompt(tweets, userInfo){
+  const tweetData=tweets.map((t,i)=>{
+    const m=t.public_metrics||{};
+    return `${i+1}. [いいね:${m.like_count||0} RT:${m.retweet_count||0} 返信:${m.reply_count||0}] "${t.text}"`;
+  }).join('\n');
+
+  return `以下は @${userInfo.username} の最近の投稿とエンゲージメント指標です。
+
+ユーザー情報:
+- フォロワー数: ${(userInfo.metrics&&userInfo.metrics.followers_count)||'不明'}
+- 投稿数: ${(userInfo.metrics&&userInfo.metrics.tweet_count)||'不明'}
+
+投稿一覧 (エンゲージメント指標付き):
+${tweetData}
+
+この投稿データを分析して、以下のJSON形式で回答してください:
+{
+  "summary": "<ユーザーのコンテンツ全体の傾向を2-3文で要約>",
+  "total_analyzed": ${tweets.length},
+  "top_posts": [
+    {
+      "rank": 1,
+      "text": "<投稿テキスト>",
+      "likes": <いいね数>,
+      "retweets": <RT数>,
+      "why_viral": "<なぜこの投稿がよくパフォーマンスしたか>"
+    }
+  ],
+  "winning_patterns": [
+    {
+      "pattern": "<パターン名>",
+      "description": "<説明>",
+      "frequency": "<このパターンがトップ投稿に出現する頻度>"
+    }
+  ],
+  "content_recommendations": [
+    {
+      "title": "<推奨コンテンツタイプ>",
+      "description": "<具体的にどんな投稿を書くべきか>",
+      "example": "<投稿の例文>"
+    }
+  ],
+  "avoid": ["<避けるべきパターン1>", "<避けるべきパターン2>"],
+  "optimal_style": {
+    "tone": "<最適なトーン>",
+    "length": "<最適な文字数の範囲>",
+    "format": "<最適なフォーマット（改行の使い方など）>",
+    "topics": ["<強いトピック1>", "<強いトピック2>"]
+  }
+}
+
+top_postsはエンゲージメントが高い順に最大5件。winning_patternsは最大5件。content_recommendationsは最大3件。`;
+}
+
+async function analyzePastPosts(){
+  const username=localStorage.getItem('ve_auth');
+  if(!username){showToast('ログインしてください');return;}
+
+  const btn=document.getElementById('pastPostsBtn');
+  const ld=document.getElementById('pastLoading');
+  const res=document.getElementById('pastResults');
+  btn.disabled=true;ld.style.display='block';res.style.display='none';
+
+  try{
+    // Step 1: Fetch tweets via proxy
+    const tweetsResp=await fetch(TWEETS_PROXY,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        username:username,
+        bearer_token:X_BEARER,
+        count:30
+      })
+    });
+
+    if(!tweetsResp.ok){
+      const err=await tweetsResp.json().catch(()=>({}));
+      throw new Error(err.error||'投稿の取得に失敗しました ('+tweetsResp.status+')');
+    }
+
+    const tweetsData=await tweetsResp.json();
+    if(!tweetsData.tweets||tweetsData.tweets.length===0){
+      throw new Error('投稿が見つかりません。');
+    }
+
+    // Update loading text
+    ld.querySelector('.loading-text').textContent='AIが'+tweetsData.count+'件の投稿を分析中...';
+
+    // Step 2: Send tweets to Claude for analysis
+    const _k=['***REMOVED***','***REMOVED***','***REMOVED***','***REMOVED***'];
+    const apiKey=atob(_k.join(''));
+
+    const aiResp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:4096,
+        system:PAST_POSTS_SYSTEM,
+        messages:[{role:'user',content:buildPastPostsPrompt(tweetsData.tweets,tweetsData.user)}]
+      })
+    });
+
+    if(!aiResp.ok){
+      const errBody=await aiResp.text();
+      throw new Error('AI分析エラー '+aiResp.status+': '+errBody.substring(0,200));
+    }
+
+    const aiData=await aiResp.json();
+    const rawText=aiData.content[0].text.trim();
+    let parsed={};
+    try{
+      const start=rawText.indexOf('{');
+      const end=rawText.lastIndexOf('}');
+      if(start>=0&&end>start) parsed=JSON.parse(rawText.substring(start,end+1));
+    }catch(e){parsed={}}
+
+    if(Object.keys(parsed).length===0){
+      res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">AI応答の解析に失敗しました</div>';
+    }else{
+      res.innerHTML=renderPastPostsAnalysis(parsed,tweetsData.user);
+    }
+    res.style.display='block';
+
+  }catch(e){
+    // Check if it's a proxy connection error (GitHub Pages / no server)
+    if(e.message.includes('Failed to fetch')||e.message.includes('NetworkError')){
+      res.innerHTML='<div style="text-align:center;padding:20px;color:#ff9f0a;font-size:14px;line-height:1.6">'
+        +'この機能はローカルサーバー（web.py）が必要です。<br>'
+        +'<code style="background:#1c1c1e;padding:4px 8px;border-radius:6px;font-size:12px">python web.py</code> を実行してから再試行してください。</div>';
+    }else{
+      res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a;font-size:14px">'+escHtml(e.message)+'</div>';
+    }
+    res.style.display='block';
+  }finally{
+    btn.disabled=false;ld.style.display='none';
+    ld.querySelector('.loading-text').textContent='過去の投稿を取得・分析中...';
+  }
+}
+
+function renderPastPostsAnalysis(d,user){
+  let h='';
+
+  // Hero
+  h+='<div class="past-hero">';
+  h+='<div class="past-title">@'+escHtml(user.username)+' のコンテンツ分析</div>';
+  h+='<div class="past-sub">'+escHtml(d.summary||d.total_analyzed+'件の投稿を分析しました')+'</div>';
+  h+='</div>';
+
+  // Top posts
+  if(d.top_posts&&d.top_posts.length){
+    h+='<div class="section-label">トップパフォーマンス投稿</div>';
+    for(const p of d.top_posts){
+      h+='<div class="top-post">';
+      h+='<div class="top-rank">#'+p.rank+' ベスト投稿</div>';
+      h+='<div class="top-text">'+escHtml(p.text)+'</div>';
+      h+='<div class="top-metrics">';
+      h+='<div class="top-metric">いいね <span>'+p.likes+'</span></div>';
+      h+='<div class="top-metric">RT <span>'+p.retweets+'</span></div>';
+      h+='</div>';
+      if(p.why_viral) h+='<div style="font-size:12px;color:#86868b;margin-top:8px;line-height:1.4">'+escHtml(p.why_viral)+'</div>';
+      h+='</div>';
+    }
+  }
+
+  // Winning patterns
+  if(d.winning_patterns&&d.winning_patterns.length){
+    h+='<div class="section-label">勝ちパターン</div>';
+    h+='<div class="pattern-card">';
+    for(const p of d.winning_patterns){
+      h+='<div class="pattern-item">';
+      h+='<div style="font-weight:600;color:#30d158;font-size:13px">'+escHtml(p.pattern)+'</div>';
+      h+='<div style="font-size:13px;color:#f5f5f7;margin-top:2px">'+escHtml(p.description)+'</div>';
+      if(p.frequency) h+='<div style="font-size:11px;color:#86868b;margin-top:2px">出現頻度: '+escHtml(p.frequency)+'</div>';
+      h+='</div>';
+    }
+    h+='</div>';
+  }
+
+  // Content recommendations
+  if(d.content_recommendations&&d.content_recommendations.length){
+    h+='<div class="section-label">おすすめコンテンツ戦略</div>';
+    for(const r of d.content_recommendations){
+      h+='<div class="content-rec">';
+      h+='<div class="rec-title">'+escHtml(r.title)+'</div>';
+      h+='<div class="rec-text">'+escHtml(r.description)+'</div>';
+      if(r.example) h+='<div style="font-size:13px;color:#bf5af2;margin-top:8px;padding:10px;background:#111;border-radius:8px;line-height:1.5">例: '+escHtml(r.example)+'</div>';
+      h+='</div>';
+    }
+  }
+
+  // Avoid patterns
+  if(d.avoid&&d.avoid.length){
+    h+='<div class="section-label">避けるべきパターン</div>';
+    h+='<div class="pattern-card">';
+    for(const a of d.avoid){
+      h+='<div class="pattern-item" style="color:#ff453a"><span>✕ </span>'+escHtml(a)+'</div>';
+    }
+    h+='</div>';
+  }
+
+  // Optimal style
+  if(d.optimal_style){
+    h+='<div class="section-label">最適なスタイル</div>';
+    h+='<div class="advice-card">';
+    if(d.optimal_style.tone) h+='<div class="advice-row"><div class="adv-label">トーン</div>'+escHtml(d.optimal_style.tone)+'</div>';
+    if(d.optimal_style.length) h+='<div class="advice-row"><div class="adv-label">文字数</div>'+escHtml(d.optimal_style.length)+'</div>';
+    if(d.optimal_style.format) h+='<div class="advice-row"><div class="adv-label">フォーマット</div>'+escHtml(d.optimal_style.format)+'</div>';
+    if(d.optimal_style.topics&&d.optimal_style.topics.length){
+      h+='<div class="advice-row"><div class="adv-label">強いトピック</div>'+d.optimal_style.topics.map(t=>escHtml(t)).join('、')+'</div>';
+    }
+    h+='</div>';
+  }
+
+  return h;
+}
 </script>
 </body>
 </html>
