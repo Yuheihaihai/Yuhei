@@ -11,10 +11,12 @@ import yaml
 from flask import Flask, request, jsonify, render_template_string
 
 from src.core.virality_engine import PostInput, ViralityEngine
+from src.llm.analyzer import LLMAnalyzer
 
 app = Flask(__name__)
 
 _engine = None
+_llm = None
 
 
 def get_engine():
@@ -26,6 +28,13 @@ def get_engine():
                 config = yaml.safe_load(f) or {}
         _engine = ViralityEngine(config)
     return _engine
+
+
+def get_llm():
+    global _llm
+    if _llm is None:
+        _llm = LLMAnalyzer()
+    return _llm
 
 
 HTML = r"""
@@ -245,6 +254,93 @@ body{
   font-size:13px;color:#ff453a;text-align:center;padding:8px;cursor:pointer;
   -webkit-user-select:none;user-select:none;margin-top:4px;
 }
+
+/* ===== LLM Button ===== */
+.btn-row{display:flex;gap:8px;margin-top:12px}
+.llm-btn{
+  flex:1;padding:14px;border:none;border-radius:14px;
+  font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;
+  background:linear-gradient(135deg,#bf5af2,#ff375f);color:#fff;
+  transition:all .15s;position:relative;overflow:hidden;
+}
+.llm-btn:hover{filter:brightness(1.1)}
+.llm-btn:active{transform:scale(.98)}
+.llm-btn:disabled{background:#1c1c1e;color:#48484a;cursor:default;transform:none;filter:none}
+.llm-btn .badge{
+  font-size:9px;background:rgba(255,255,255,.25);padding:2px 6px;
+  border-radius:6px;margin-left:4px;vertical-align:middle;
+}
+
+/* ===== LLM Loading ===== */
+.llm-loading{display:none;text-align:center;padding:40px 0}
+.llm-loading .loading-ring{border-top-color:#bf5af2}
+.llm-loading .loading-text{color:#bf5af2}
+
+/* ===== LLM Results ===== */
+.llm-results{display:none;margin-top:20px;animation:fadeUp .4s ease}
+
+.llm-hero{
+  background:linear-gradient(135deg,#1a0a2e,#2d0a1e);
+  border:1px solid #bf5af233;border-radius:18px;padding:22px;text-align:center;
+  margin-bottom:16px;
+}
+.llm-hero .llm-score-big{font-size:48px;font-weight:800;background:linear-gradient(135deg,#bf5af2,#ff375f);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.llm-hero .llm-score-label{font-size:13px;color:#bf5af2;margin-top:2px}
+
+.llm-diagnosis{
+  background:#1c1c1e;border-radius:14px;padding:16px;margin-bottom:10px;
+}
+.llm-diagnosis .prob{font-size:14px;color:#bf5af2;font-weight:600;margin-bottom:8px}
+.llm-diagnosis .algo{font-size:13px;color:#86868b;line-height:1.5;margin-top:8px}
+.flaw-item{
+  display:flex;align-items:flex-start;gap:6px;font-size:13px;color:#ff453a;
+  margin:4px 0;line-height:1.4;
+}
+.strength-item{
+  display:flex;align-items:flex-start;gap:6px;font-size:13px;color:#30d158;
+  margin:4px 0;line-height:1.4;
+}
+
+.rewrite-card{
+  background:#1c1c1e;border-radius:14px;padding:16px;margin-bottom:8px;
+  border:1px solid transparent;transition:border-color .2s;
+}
+.rewrite-card:first-child{border-color:#bf5af244}
+.rewrite-label{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.rewrite-tag{
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  padding:3px 10px;border-radius:6px;
+}
+.rewrite-tag.max{background:#bf5af233;color:#bf5af2}
+.rewrite-tag.hook{background:#0a84ff33;color:#0a84ff}
+.rewrite-tag.controversy{background:#ff9f0a33;color:#ff9f0a}
+.rewrite-text{
+  font-size:15px;line-height:1.6;color:#f5f5f7;white-space:pre-wrap;
+  padding:12px;background:#111;border-radius:10px;margin:8px 0;cursor:pointer;
+}
+.rewrite-text:active{background:#222}
+.rewrite-strategy{font-size:12px;color:#86868b;line-height:1.4}
+.rewrite-eng{font-size:12px;color:#bf5af2;margin-top:4px}
+.copy-label{font-size:11px;color:#0a84ff;cursor:pointer}
+
+.thread-card{
+  background:#1c1c1e;border-radius:14px;padding:16px;margin-bottom:8px;
+}
+.thread-tweet{
+  font-size:13px;line-height:1.5;padding:10px 12px;margin:4px 0;
+  background:#111;border-radius:10px;border-left:2px solid #bf5af2;
+  cursor:pointer;
+}
+.thread-tweet:active{background:#1a1a1a}
+.thread-num{font-size:11px;color:#bf5af2;font-weight:600;margin-bottom:4px}
+
+.advice-card{
+  background:#1c1c1e;border-radius:14px;padding:16px;
+}
+.advice-row{padding:8px 0;border-bottom:1px solid #2c2c2e;font-size:13px;line-height:1.5}
+.advice-row:last-child{border-bottom:none}
+.advice-row .adv-label{font-size:11px;color:#86868b;margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px}
 </style>
 </head>
 <body>
@@ -270,6 +366,9 @@ body{
       <input id="engrate" type="number" step="0.001" placeholder="Eng rate" value="0.02">
     </div>
     <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">Analyze Post</button>
+    <div class="btn-row">
+      <button class="llm-btn" id="llmBtn" onclick="llmAnalyze()">AI Deep Analysis<span class="badge">Claude</span></button>
+    </div>
   </div>
 
   <!-- Loading -->
@@ -280,6 +379,15 @@ body{
 
   <!-- Results -->
   <div class="results" id="results"></div>
+
+  <!-- LLM Loading -->
+  <div class="llm-loading" id="llmLoading">
+    <div class="loading-ring"></div>
+    <div class="loading-text">AI is rewriting your post for 1M+ virality...</div>
+  </div>
+
+  <!-- LLM Results -->
+  <div class="llm-results" id="llmResults"></div>
 
   <!-- History -->
   <div class="history" id="historySection" style="display:none">
@@ -483,6 +591,121 @@ function showToast(msg){
   setTimeout(()=>t.classList.remove('show'),1500);
 }
 
+/* ===== LLM Analysis ===== */
+async function llmAnalyze(){
+  const text=document.getElementById('text').value.trim();
+  if(!text)return;
+  const btn=document.getElementById('llmBtn');
+  const ld=document.getElementById('llmLoading');
+  const res=document.getElementById('llmResults');
+  btn.disabled=true;ld.style.display='block';res.style.display='none';
+  try{
+    const resp=await fetch('/api/llm-analyze',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        text,
+        followers:parseInt(document.getElementById('followers').value)||10000,
+        engagement_rate:parseFloat(document.getElementById('engrate').value)||0.02
+      })
+    });
+    const d=await resp.json();
+    if(d.error){
+      res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a;font-size:14px">'+escHtml(d.error)+'</div>';
+    }else{
+      res.innerHTML=renderLLM(d);
+    }
+    res.style.display='block';
+  }catch(e){
+    res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">'+e.message+'</div>';
+    res.style.display='block';
+  }finally{btn.disabled=false;ld.style.display='none';}
+}
+
+function renderLLM(d){
+  let h='';
+
+  // Hero score
+  h+='<div class="llm-hero">';
+  h+='<div class="llm-score-big">'+d.viral_score+'</div>';
+  h+='<div class="llm-score-label">AI Viral Potential (post-optimization)</div>';
+  h+='</div>';
+
+  // Diagnosis
+  if(d.diagnosis){
+    h+='<div class="section-label">Diagnosis</div>';
+    h+='<div class="llm-diagnosis">';
+    if(d.diagnosis.current_viral_probability)
+      h+='<div class="prob">Current viral probability: '+escHtml(d.diagnosis.current_viral_probability)+'</div>';
+    if(d.diagnosis.fatal_flaws&&d.diagnosis.fatal_flaws.length){
+      for(const f of d.diagnosis.fatal_flaws)h+='<div class="flaw-item"><span>✕</span><span>'+escHtml(f)+'</span></div>';
+    }
+    if(d.diagnosis.strengths&&d.diagnosis.strengths.length){
+      for(const s of d.diagnosis.strengths)h+='<div class="strength-item"><span>✓</span><span>'+escHtml(s)+'</span></div>';
+    }
+    if(d.diagnosis.algorithm_signals)
+      h+='<div class="algo">Algorithm: '+escHtml(d.diagnosis.algorithm_signals)+'</div>';
+    h+='</div>';
+  }
+
+  // Rewrites
+  if(d.rewrites&&d.rewrites.length){
+    h+='<div class="section-label">Viral Rewrites</div>';
+    const tagCls={maximum_viral:'max',hook_optimized:'hook',controversy_play:'controversy'};
+    const tagName={maximum_viral:'Maximum Viral',hook_optimized:'Hook Optimized',controversy_play:'Controversy Play'};
+    for(const rw of d.rewrites){
+      const cls=tagCls[rw.version]||'max';
+      h+='<div class="rewrite-card">';
+      h+='<div class="rewrite-label"><span class="rewrite-tag '+cls+'">'+escHtml(tagName[rw.version]||rw.version)+'</span>';
+      h+='<span class="copy-label" onclick="copyText(this.parentElement.nextElementSibling.textContent)">Copy</span></div>';
+      h+='<div class="rewrite-text" onclick="copyText(this.textContent)">'+escHtml(rw.text)+'</div>';
+      h+='<div class="rewrite-strategy">'+escHtml(rw.strategy||'')+'</div>';
+      if(rw.predicted_engagement)h+='<div class="rewrite-eng">Predicted: '+escHtml(rw.predicted_engagement)+'</div>';
+      h+='</div>';
+    }
+  }
+
+  // LLM Hooks
+  if(d.hooks&&d.hooks.length){
+    h+='<div class="section-label">AI-Generated Hooks</div><div class="hooks-list">';
+    d.hooks.forEach((hk,i)=>{
+      h+='<div class="hook-card" onclick="copyText(\''+escJs(hk)+'\')">';
+      h+='<div class="hook-num" style="background:#bf5af2">'+(i+1)+'</div>';
+      h+='<div class="hook-text">'+escHtml(hk)+'</div>';
+      h+='<div class="hook-copy">Copy</div></div>';
+    });
+    h+='</div>';
+  }
+
+  // Thread strategy
+  if(d.thread_strategy&&d.thread_strategy.should_thread&&d.thread_strategy.thread_outline){
+    h+='<div class="section-label">Thread Strategy</div>';
+    h+='<div class="thread-card">';
+    if(d.thread_strategy.why)h+='<div style="font-size:13px;color:#86868b;margin-bottom:10px">'+escHtml(d.thread_strategy.why)+'</div>';
+    d.thread_strategy.thread_outline.forEach((tw,i)=>{
+      h+='<div class="thread-tweet" onclick="copyText(this.innerText.replace(/^\\d+\\/\\d+\\s*/,\'\'))">';
+      h+='<div class="thread-num">'+(i+1)+'/'+d.thread_strategy.thread_outline.length+'</div>';
+      h+=escHtml(tw)+'</div>';
+    });
+    h+='</div>';
+  }
+
+  // Posting advice
+  if(d.posting_advice){
+    h+='<div class="section-label">Posting Strategy</div>';
+    h+='<div class="advice-card">';
+    const fields=[['best_time','Best Time'],['media','Media Strategy'],['engagement_strategy','First 30 Min'],['follow_up','Follow-up Post']];
+    for(const[k,label]of fields){
+      if(d.posting_advice[k]){
+        h+='<div class="advice-row"><div class="adv-label">'+label+'</div>';
+        h+=escHtml(d.posting_advice[k])+'</div>';
+      }
+    }
+    h+='</div>';
+  }
+
+  return h;
+}
+
 /* ===== History ===== */
 function saveHistory(text,score,category){
   history.unshift({text:text.substring(0,100),score,category,ts:Date.now()});
@@ -564,6 +787,51 @@ def api_analyze():
         "media_recommendation": result.media_recommendation,
         "hashtag_strategy": result.hashtag_strategy,
         "engagement_bait_type": result.engagement_bait_type,
+    })
+
+
+@app.route("/api/llm-analyze", methods=["POST"])
+def api_llm_analyze():
+    data = request.get_json()
+    text = data.get("text", "")
+    if not text:
+        return jsonify({"error": "text is required"}), 400
+
+    llm = get_llm()
+    if not llm.is_available:
+        return jsonify({
+            "error": "ANTHROPIC_API_KEY not set. Set the environment variable to enable AI analysis."
+        })
+
+    followers = data.get("followers", 10000)
+
+    # Optionally run the standard engine first to get feature scores
+    engine = get_engine()
+    post = PostInput(
+        text=text,
+        author_follower_count=followers,
+        author_engagement_rate=data.get("engagement_rate", 0.02),
+        posted_at=datetime.now(timezone.utc).isoformat(),
+    )
+    result = engine.analyze(post)
+    feature_scores = result.score.feature_breakdown
+
+    analysis = llm.analyze(
+        post_text=text,
+        followers=followers,
+        feature_scores=feature_scores,
+    )
+
+    if analysis.error:
+        return jsonify({"error": analysis.error})
+
+    return jsonify({
+        "viral_score": analysis.viral_score,
+        "diagnosis": analysis.diagnosis,
+        "rewrites": analysis.rewrites,
+        "hooks": analysis.hooks,
+        "thread_strategy": analysis.thread_strategy,
+        "posting_advice": analysis.posting_advice,
     })
 
 
