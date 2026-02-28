@@ -247,50 +247,50 @@ body{
   <button class="login-btn" id="loginBtn" onclick="handleLogin()">ログイン</button>
   <button class="login-btn oauth-btn" id="oauthBtn" style="display:none;margin-top:10px;background:#000;border:1px solid #536471" onclick="startOAuth()">Xで本人確認してログイン</button>
   <div class="login-error" id="loginError"></div>
-  <div class="login-footer">Authorized users only</div>
+  <div class="login-footer">許可されたユーザーのみ</div>
 </div>
 
 <!-- Main App (hidden until login) -->
 <div class="app" id="mainApp" style="display:none">
   <div class="header">
     <h1>Virality Engine</h1>
-    <p>X post virality score &amp; optimization.<br>Runs 100% in your browser.</p>
+    <p>Xの投稿を分析してバズる戦略を提案します。<br>ブラウザ上で100%動作します。</p>
   </div>
   <div class="input-area">
     <div class="textarea-wrap">
-      <textarea id="text" placeholder="Write your post..." oninput="updateCharCount()"></textarea>
+      <textarea id="text" placeholder="投稿内容を入力..." oninput="updateCharCount()"></textarea>
       <div class="char-count" id="charCount">0 / 280</div>
     </div>
     <div class="settings-toggle" id="settingsToggle" onclick="toggleSettings()">
-      Settings
+      設定
       <svg viewBox="0 0 20 20"><path d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
     </div>
     <div class="settings-panel" id="settingsPanel">
-      <input id="followers" type="number" placeholder="Followers" value="10000">
-      <input id="engrate" type="number" step="0.001" placeholder="Eng rate" value="0.02">
+      <input id="followers" type="number" placeholder="フォロワー数" value="10000">
+      <input id="engrate" type="number" step="0.001" placeholder="エンゲージ率" value="0.02">
     </div>
-    <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">Analyze Post</button>
+    <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">投稿を分析</button>
     <div class="btn-row">
-      <button class="llm-btn" id="llmBtn" onclick="llmAnalyze()">AI Deep Analysis<span class="badge">Claude</span></button>
+      <button class="llm-btn" id="llmBtn" onclick="llmAnalyze()">AI詳細分析<span class="badge">Claude</span></button>
     </div>
   </div>
   <div class="loading" id="loading">
     <div class="loading-ring"></div>
-    <div class="loading-text">Analyzing...</div>
+    <div class="loading-text">分析中...</div>
   </div>
   <div class="results" id="results"></div>
   <div class="llm-loading" id="llmLoading">
     <div class="loading-ring"></div>
-    <div class="loading-text">AI is rewriting your post for 1M+ virality...</div>
+    <div class="loading-text">AIが投稿を最適化中...</div>
   </div>
   <div class="llm-results" id="llmResults"></div>
   <div class="history" id="historySection" style="display:none">
-    <div class="section-label">Recent</div>
+    <div class="section-label">履歴</div>
     <div id="historyList"></div>
-    <div class="history-clear" onclick="clearHistory()">Clear History</div>
+    <div class="history-clear" onclick="clearHistory()">履歴を削除</div>
   </div>
 </div>
-<div class="toast" id="toast">Copied!</div>
+<div class="toast" id="toast">コピーしました！</div>
 
 <script>
 /* ==========================================================================
@@ -906,7 +906,7 @@ function analyze(){
   const btn=document.getElementById('analyzeBtn');
   const loading=document.getElementById('loading');
   const results=document.getElementById('results');
-  btn.disabled=true;btn.textContent='Analyzing...';
+  btn.disabled=true;btn.textContent='分析中...';
   loading.style.display='block';results.style.display='none';
 
   // Simulate tiny async for UI smoothness
@@ -928,7 +928,7 @@ function analyze(){
       results.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">Error: '+escHtml(e.message)+'</div>';
       results.style.display='block';
     }finally{
-      btn.disabled=false;btn.textContent='Analyze Post';loading.style.display='none';
+      btn.disabled=false;btn.textContent='投稿を分析';loading.style.display='none';
     }
   },50);
 }
@@ -1000,13 +1000,13 @@ function scoreGradient(v){
   if(v>=.3)return['#ff9f0a','#33261a'];return['#ff453a','#331a1a'];
 }
 function catLabel(c){
-  return{high_potential:'High Potential',medium_potential:'Medium Potential',moderate:'Moderate',low_potential:'Low Potential'}[c]||c;
+  return{high_potential:'高ポテンシャル',medium_potential:'中ポテンシャル',moderate:'普通',low_potential:'低ポテンシャル'}[c]||c;
 }
 function fmtNum(n){if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return String(n)}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function escJs(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\n/g,'\\n')}
 
-function copyText(text){navigator.clipboard.writeText(text).then(()=>showToast('Copied!')).catch(()=>{})}
+function copyText(text){navigator.clipboard.writeText(text).then(()=>showToast('コピーしました！')).catch(()=>{})}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1500)}
 
 function renderResult(d){
@@ -1024,7 +1024,7 @@ function renderResult(d){
   h+='<div class="imp-item"><div class="val">'+fmtNum(s.predicted_impressions_p90)+'</div><div class="label">p90</div></div>';
   h+='</div></div>';
 
-  h+='<div class="section-label">Feature Breakdown</div><div class="features-grid">';
+  h+='<div class="section-label">スコア内訳</div><div class="features-grid">';
   const fnames={hook_strength:'Hook',emotional_intensity:'Emotion',curiosity_gap:'Curiosity',
     controversy_index:'Controversy',readability_score:'Readability',structure_score:'Structure',
     timing_score:'Timing',trend_alignment:'Trend'};
@@ -1037,13 +1037,13 @@ function renderResult(d){
   h+='</div>';
 
   if(s.weaknesses&&s.weaknesses.length){
-    h+='<div class="section-label">Weaknesses</div><div class="weakness-list">';
+    h+='<div class="section-label">弱点</div><div class="weakness-list">';
     for(const w of s.weaknesses) h+='<div class="weakness-pill"><span class="icon">!</span><span>'+escHtml(w)+'</span></div>';
     h+='</div>';
   }
 
   if(d.recommendations&&d.recommendations.length){
-    h+='<div class="section-label">Recommendations</div><div class="rec-list">';
+    h+='<div class="section-label">改善提案</div><div class="rec-list">';
     for(const r of d.recommendations){
       const cls=r.type==='timing'?'timing':r.type==='format'?'format':r.type==='trigger'?'trigger':'';
       h+='<div class="rec-card '+cls+'"><div class="rec-header"><span class="rec-tag">'+r.type+'</span>';
@@ -1058,20 +1058,20 @@ function renderResult(d){
   }
 
   if(d.hook_variants&&d.hook_variants.length){
-    h+='<div class="section-label">Hook Variants</div><div class="hooks-list">';
+    h+='<div class="section-label">フック候補</div><div class="hooks-list">';
     d.hook_variants.forEach((hk,i)=>{
       h+='<div class="hook-card" onclick="copyText(\''+escJs(hk)+'\')">';
       h+='<div class="hook-num">'+(i+1)+'</div><div class="hook-text">'+escHtml(hk)+'</div>';
-      h+='<div class="hook-copy">Copy</div></div>';
+      h+='<div class="hook-copy">コピー</div></div>';
     });
     h+='</div>';
   }
 
-  h+='<div class="section-label">Details</div><div class="meta-grid">';
-  h+='<div class="meta-item"><div class="meta-label">Media</div><div class="meta-value">'+escHtml(d.media_recommendation).replace(/_/g,' ')+'</div></div>';
+  h+='<div class="section-label">詳細</div><div class="meta-grid">';
+  h+='<div class="meta-item"><div class="meta-label">メディア</div><div class="meta-value">'+escHtml(d.media_recommendation).replace(/_/g,' ')+'</div></div>';
   h+='<div class="meta-item"><div class="meta-label">CTA</div><div class="meta-value">'+escHtml(d.engagement_bait_type).replace(/_/g,' ')+'</div></div>';
-  h+='<div class="meta-item"><div class="meta-label">Thread</div><div class="meta-value">'+(d.thread_expansion.recommended?d.thread_expansion.optimal_length+' posts':'Not needed')+'</div></div>';
-  h+='<div class="meta-item"><div class="meta-label">Hashtags</div><div class="meta-value">'+(d.hashtag_strategy.tags&&d.hashtag_strategy.tags.length?d.hashtag_strategy.tags.join(' '):'None')+'</div></div>';
+  h+='<div class="meta-item"><div class="meta-label">スレッド</div><div class="meta-value">'+(d.thread_expansion.recommended?d.thread_expansion.optimal_length+'件投稿':'不要')+'</div></div>';
+  h+='<div class="meta-item"><div class="meta-label">ハッシュタグ</div><div class="meta-value">'+(d.hashtag_strategy.tags&&d.hashtag_strategy.tags.length?d.hashtag_strategy.tags.join(' '):'なし')+'</div></div>';
   h+='</div>';
   return h;
 }
@@ -1079,10 +1079,10 @@ function renderResult(d){
 function renderLLM(d){
   let h='';
   h+='<div class="llm-hero"><div class="llm-score-big">'+(d.viral_score||'?')+'</div>';
-  h+='<div class="llm-score-label">AI Viral Potential (post-optimization)</div></div>';
+  h+='<div class="llm-score-label">AIバイラルポテンシャル（最適化後）</div></div>';
 
   if(d.diagnosis){
-    h+='<div class="section-label">Diagnosis</div><div class="llm-diagnosis">';
+    h+='<div class="section-label">診断</div><div class="llm-diagnosis">';
     if(d.diagnosis.current_viral_probability) h+='<div class="prob">Current viral probability: '+escHtml(d.diagnosis.current_viral_probability)+'</div>';
     if(d.diagnosis.fatal_flaws) for(const f of d.diagnosis.fatal_flaws) h+='<div class="flaw-item"><span>✕</span><span>'+escHtml(f)+'</span></div>';
     if(d.diagnosis.strengths) for(const s of d.diagnosis.strengths) h+='<div class="strength-item"><span>✓</span><span>'+escHtml(s)+'</span></div>';
@@ -1091,13 +1091,13 @@ function renderLLM(d){
   }
 
   if(d.rewrites&&d.rewrites.length){
-    h+='<div class="section-label">Viral Rewrites</div>';
+    h+='<div class="section-label">バズるリライト</div>';
     const tagCls={maximum_viral:'max',hook_optimized:'hook',controversy_play:'controversy'};
-    const tagName={maximum_viral:'Maximum Viral',hook_optimized:'Hook Optimized',controversy_play:'Controversy Play'};
+    const tagName={maximum_viral:'最大バイラル',hook_optimized:'フック最適化',controversy_play:'議論喚起'};
     for(const rw of d.rewrites){
       const cls=tagCls[rw.version]||'max';
       h+='<div class="rewrite-card"><div class="rewrite-label"><span class="rewrite-tag '+cls+'">'+escHtml(tagName[rw.version]||rw.version)+'</span>';
-      h+='<span class="copy-label" onclick="copyText(this.parentElement.nextElementSibling.textContent)">Copy</span></div>';
+      h+='<span class="copy-label" onclick="copyText(this.parentElement.nextElementSibling.textContent)">コピー</span></div>';
       h+='<div class="rewrite-text" onclick="copyText(this.textContent)">'+escHtml(rw.text)+'</div>';
       h+='<div class="rewrite-strategy">'+escHtml(rw.strategy||'')+'</div>';
       if(rw.predicted_engagement) h+='<div class="rewrite-eng">Predicted: '+escHtml(rw.predicted_engagement)+'</div>';
@@ -1106,17 +1106,17 @@ function renderLLM(d){
   }
 
   if(d.hooks&&d.hooks.length){
-    h+='<div class="section-label">AI-Generated Hooks</div><div class="hooks-list">';
+    h+='<div class="section-label">AI生成フック</div><div class="hooks-list">';
     d.hooks.forEach((hk,i)=>{
       h+='<div class="hook-card" onclick="copyText(\''+escJs(hk)+'\')">';
       h+='<div class="hook-num" style="background:#bf5af2">'+(i+1)+'</div>';
-      h+='<div class="hook-text">'+escHtml(hk)+'</div><div class="hook-copy">Copy</div></div>';
+      h+='<div class="hook-text">'+escHtml(hk)+'</div><div class="hook-copy">コピー</div></div>';
     });
     h+='</div>';
   }
 
   if(d.thread_strategy&&d.thread_strategy.should_thread&&d.thread_strategy.thread_outline){
-    h+='<div class="section-label">Thread Strategy</div><div class="thread-card">';
+    h+='<div class="section-label">スレッド戦略</div><div class="thread-card">';
     if(d.thread_strategy.why) h+='<div style="font-size:13px;color:#86868b;margin-bottom:10px">'+escHtml(d.thread_strategy.why)+'</div>';
     d.thread_strategy.thread_outline.forEach((tw,i)=>{
       h+='<div class="thread-tweet" onclick="copyText(this.innerText)"><div class="thread-num">'+(i+1)+'/'+d.thread_strategy.thread_outline.length+'</div>'+escHtml(tw)+'</div>';
@@ -1125,8 +1125,8 @@ function renderLLM(d){
   }
 
   if(d.posting_advice){
-    h+='<div class="section-label">Posting Strategy</div><div class="advice-card">';
-    for(const[k,label]of [['best_time','Best Time'],['media','Media Strategy'],['engagement_strategy','First 30 Min'],['follow_up','Follow-up Post']]){
+    h+='<div class="section-label">投稿戦略</div><div class="advice-card">';
+    for(const[k,label]of [['best_time','最適な投稿時間'],['media','メディア戦略'],['engagement_strategy','最初の30分'],['follow_up','フォローアップ投稿']]){
       if(d.posting_advice[k]) h+='<div class="advice-row"><div class="adv-label">'+label+'</div>'+escHtml(d.posting_advice[k])+'</div>';
     }
     h+='</div>';
