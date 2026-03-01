@@ -137,11 +137,24 @@ class LLMAnalyzer:
             self._client = anthropic.Anthropic(api_key=self.api_key)
         return self._client
 
+    @staticmethod
+    def _sanitize_input(text: str) -> str:
+        """Sanitize user input to mitigate prompt injection."""
+        # Truncate to reasonable length
+        text = text[:10000]
+        # Escape triple-quote delimiters that could break out of the prompt
+        text = text.replace('"""', '‟‟‟')
+        text = text.replace("'''", "‛‛‛")
+        return text
+
     def analyze(self, post_text: str, followers: int = 10000,
                 feature_scores: dict | None = None) -> LLMAnalysis:
         """Run deep LLM analysis on a post."""
         if not self.is_available:
             return LLMAnalysis(error="ANTHROPIC_API_KEY not set")
+
+        post_text = self._sanitize_input(post_text)
+        followers = max(0, min(followers, 500_000_000))
 
         features_str = ""
         if feature_scores:

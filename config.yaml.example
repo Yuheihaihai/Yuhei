@@ -1,0 +1,29 @@
+# X Virality Optimization Engine Configuration
+# Copy this file to config.yaml and fill in your values.
+# NEVER commit config.yaml to version control.
+
+x_api:
+  # Bearer token — can also be set via X_BEARER_TOKEN environment variable
+  bearer_token: ""
+
+auth:
+  # Handles allowed to use the app (lowercase, without @)
+  allowed_handles:
+    - "your_handle_here"
+  # Secret key for Flask sessions — set via FLASK_SECRET_KEY env var or here
+  secret_key: ""
+
+# Allowed CORS origins (comma-separated), or set ALLOWED_ORIGINS env var
+# Leave empty for same-origin only (recommended)
+allowed_origins: []
+
+storage:
+  db_path: "data/virality.db"
+
+nlp:
+  embedding_dim: 384
+  # Auto-detect sentence-transformers for better embeddings
+  try_real_embeddings: true
+
+# ML model path (null = formula-only scoring for MVP)
+model_path: null

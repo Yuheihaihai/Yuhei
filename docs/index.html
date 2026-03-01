@@ -348,117 +348,45 @@ body{
 
 <script>
 /* ==========================================================================
-   VIRALITY ENGINE — AI Analysis (Claude)
+   VIRALITY ENGINE — All API calls go through backend (no embedded keys)
    ========================================================================== */
 
 // ---------------------------------------------------------------------------
-// LLM Prompts
+// Auth — Server-side session + optional X OAuth 2.0 PKCE
 // ---------------------------------------------------------------------------
-const LLM_SYSTEM=`You are the world's #1 X (Twitter) virality engineer.
-You have reverse-engineered the X algorithm and studied 500,000+ posts that achieved 1M+ impressions.
-
-Your ONLY goal: rewrite any post so it GUARANTEES maximum virality (1M+ impressions, 100K+ likes).
-
-Core principles you follow:
-1. HOOK — The first 5-8 words decide everything. Must trigger pattern interrupt + curiosity gap.
-2. EMOTION — Posts that trigger strong emotions (awe, anger, fear, surprise) get 5-10x more shares.
-3. SPECIFICITY — "87% of founders" > "most founders". Numbers create credibility.
-4. STRUCTURE — Short lines. Visual breathing room. One idea per line. Never a wall of text.
-5. CONTROVERSY — Slightly polarizing > neutral. But never offensive.
-6. SOCIAL PROOF — Imply authority, data, or experience.
-7. CURIOSITY GAP — Promise a revelation. Withhold just enough to force engagement.
-8. CALL TO ACTION — End with engagement bait: question, challenge, or "repost if you agree."
-9. TIMING — Reference current trends, zeitgeist, or pain points.
-10. FORMAT — Use line breaks aggressively. No hashtags (or max 1). No links in the main body.
-
-You respond ONLY in valid JSON. No markdown fences. No explanation outside JSON.
-IMPORTANT: All text values in the JSON (diagnosis, rewrites, hooks, strategies, advice) MUST be written in Japanese (日本語).`;
-
-function buildAnalyzePrompt(text, followers){
-  return `Analyze this X post and provide a complete virality optimization.
-
-POST:
-"""
-${text}
-"""
-
-AUTHOR INFO:
-- Followers: ${followers.toLocaleString()}
-
-Respond in this exact JSON format:
-{
-  "diagnosis": {
-    "current_viral_probability": "<0-100% estimate>",
-    "fatal_flaws": ["<most critical issues preventing virality>"],
-    "strengths": ["<what's already working>"],
-    "algorithm_signals": "<how X algorithm will treat this post>"
-  },
-  "rewrites": [
-    {
-      "version": "maximum_viral",
-      "text": "<completely rewritten post optimized for 1M+ impressions>",
-      "strategy": "<1-sentence explanation of why this version will go viral>",
-      "predicted_engagement": "<estimated impressions>"
-    },
-    {
-      "version": "hook_optimized",
-      "text": "<same core message but with a killer hook>",
-      "strategy": "<1-sentence explanation>",
-      "predicted_engagement": "<estimated impressions>"
-    },
-    {
-      "version": "controversy_play",
-      "text": "<slightly polarizing angle that drives debate>",
-      "strategy": "<1-sentence explanation>",
-      "predicted_engagement": "<estimated impressions>"
-    }
-  ],
-  "hooks": [
-    "<hook variant 1>",
-    "<hook variant 2>",
-    "<hook variant 3>",
-    "<hook variant 4>",
-    "<hook variant 5>"
-  ],
-  "thread_strategy": {
-    "should_thread": true,
-    "thread_outline": ["<tweet 1>", "<tweet 2>"],
-    "why": "<reason>"
-  },
-  "posting_advice": {
-    "best_time": "<specific recommendation>",
-    "media": "<what image/video to attach and why>",
-    "engagement_strategy": "<what to do in first 30 min after posting>",
-    "follow_up": "<what to post 2-4 hours later to boost>"
-  },
-  "viral_score": 75
-}`;
-}
-
-// ---------------------------------------------------------------------------
-// Auth — Handle login + optional X OAuth 2.0 PKCE verification
-// ---------------------------------------------------------------------------
-const ALLOWED_HANDLES=['lovejesusyt'];
 const OAUTH_CLIENT_ID='dzlMT1BzWUVVRGZVTjFBaDY0Unc6MTpjaQ';
 const OAUTH_REDIRECT=location.href.split('?')[0].split('#')[0];
 const AUTH_PROXY=location.origin+'/api/auth/exchange';
 
-// --- Handle-based login (works everywhere, including GitHub Pages) ---
-function handleLogin(){
+async function handleLogin(){
   const input=document.getElementById('handleInput');
   const raw=input.value.trim().replace(/^@/,'');
   if(!raw){
     showLoginError('ハンドル名を入力してください。');
     return;
   }
-  const username=raw.toLowerCase();
-  if(!ALLOWED_HANDLES.includes(username)){
-    showLoginError('このアカウント (@'+raw+') は許可されていません。');
-    return;
+  const btn=document.getElementById('loginBtn');
+  btn.disabled=true;btn.textContent='ログイン中...';
+  try{
+    const resp=await fetch('/api/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body:JSON.stringify({handle:raw})
+    });
+    const data=await resp.json();
+    if(!resp.ok){
+      showLoginError(data.error||'ログインに失敗しました');
+      return;
+    }
+    localStorage.setItem('ve_auth',data.user);
+    localStorage.setItem('ve_auth_name',raw);
+    showApp();
+  }catch(e){
+    showLoginError('サーバーに接続できません');
+  }finally{
+    btn.disabled=false;btn.textContent='ログイン';
   }
-  localStorage.setItem('ve_auth',username);
-  localStorage.setItem('ve_auth_name',raw);
-  showApp();
 }
 
 // --- OAuth PKCE (requires auth proxy server) ---
@@ -475,14 +403,11 @@ async function generateCodeChallenge(v){
 async function startOAuth(){
   const btn=document.getElementById('oauthBtn');
   btn.disabled=true;btn.textContent='リダイレクト中...';
-
   const verifier=generateCodeVerifier();
   const challenge=await generateCodeChallenge(verifier);
   const state=crypto.randomUUID();
-
   sessionStorage.setItem('oauth_verifier',verifier);
   sessionStorage.setItem('oauth_state',state);
-
   const params=new URLSearchParams({
     response_type:'code',
     client_id:OAUTH_CLIENT_ID,
@@ -500,7 +425,6 @@ async function handleOAuthCallback(){
   const code=params.get('code');
   const state=params.get('state');
   if(!code)return false;
-
   const savedState=sessionStorage.getItem('oauth_state');
   const verifier=sessionStorage.getItem('oauth_verifier');
   if(!savedState||state!==savedState||!verifier){
@@ -508,42 +432,25 @@ async function handleOAuthCallback(){
     history.replaceState(null,'',OAUTH_REDIRECT);
     return true;
   }
-
   history.replaceState(null,'',OAUTH_REDIRECT);
   sessionStorage.removeItem('oauth_state');
   sessionStorage.removeItem('oauth_verifier');
-
   const btn=document.getElementById('loginBtn');
   btn.disabled=true;btn.textContent='本人確認中...';
-
   try{
     const resp=await fetch(AUTH_PROXY,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        code:code,
-        code_verifier:verifier,
-        redirect_uri:OAUTH_REDIRECT,
-        client_id:OAUTH_CLIENT_ID
-      })
+      credentials:'same-origin',
+      body:JSON.stringify({code,code_verifier:verifier,redirect_uri:OAUTH_REDIRECT,client_id:OAUTH_CLIENT_ID})
     });
-
     if(!resp.ok){
       const err=await resp.json().catch(()=>({}));
       throw new Error(err.error||'本人確認に失敗しました ('+resp.status+')');
     }
-
     const userData=await resp.json();
-    const username=userData.username.toLowerCase();
-
-    if(!ALLOWED_HANDLES.includes(username)){
-      showLoginError('このアカウント (@'+userData.username+') は許可されていません。');
-      btn.disabled=false;btn.textContent='ログイン';
-      return true;
-    }
-
-    localStorage.setItem('ve_auth',username);
-    localStorage.setItem('ve_auth_name',userData.name||username);
+    localStorage.setItem('ve_auth',userData.username.toLowerCase());
+    localStorage.setItem('ve_auth_name',userData.name||userData.username);
     showApp();
   }catch(e){
     showLoginError('認証エラー: '+e.message);
@@ -552,7 +459,6 @@ async function handleOAuthCallback(){
   return true;
 }
 
-// --- Detect if OAuth proxy is available and show the button ---
 async function detectOAuthProxy(){
   try{
     const resp=await fetch(AUTH_PROXY,{method:'OPTIONS',signal:AbortSignal.timeout(2000)});
@@ -569,12 +475,11 @@ function showLoginError(msg){
   if(el)el.textContent=msg;
 }
 
-function checkSession(){
-  const saved=localStorage.getItem('ve_auth');
-  if(saved && ALLOWED_HANDLES.includes(saved.toLowerCase())){
-    showApp();
-    return true;
-  }
+async function checkSession(){
+  try{
+    const resp=await fetch('/api/session',{credentials:'same-origin'});
+    if(resp.ok){showApp();return true;}
+  }catch(_){}
   return false;
 }
 
@@ -584,6 +489,7 @@ function showApp(){
 }
 
 function logout(){
+  fetch('/api/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});
   localStorage.removeItem('ve_auth');
   localStorage.removeItem('ve_auth_name');
   location.reload();
@@ -591,7 +497,7 @@ function logout(){
 
 // Boot
 document.addEventListener('DOMContentLoaded',async()=>{
-  if(checkSession())return;
+  if(await checkSession())return;
   const handled=await handleOAuthCallback();
   if(!handled){
     detectOAuthProxy();
@@ -619,15 +525,12 @@ function toggleSettings(){
   document.getElementById('settingsToggle').classList.toggle('open');
 }
 
-// Built-in API keys
-const _xk=['***REMOVED***','***REMOVED***','***REMOVED***'];
-const X_BEARER=atob(_xk.join(''));
-
+// ---------------------------------------------------------------------------
+// LLM Analysis — calls backend /api/llm-analyze (no API keys in frontend)
+// ---------------------------------------------------------------------------
 async function llmAnalyze(){
   const text=document.getElementById('text').value.trim();
   if(!text)return;
-  const _k=['***REMOVED***','***REMOVED***','***REMOVED***','***REMOVED***'];
-  const apiKey=atob(_k.join(''));
   const btn=document.getElementById('llmBtn');
   const ld=document.getElementById('llmLoading');
   const res=document.getElementById('llmResults');
@@ -635,42 +538,27 @@ async function llmAnalyze(){
 
   try{
     const followers=parseInt(document.getElementById('followers').value)||10000;
+    const engrate=parseFloat(document.getElementById('engrate').value)||0.02;
 
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    const resp=await fetch('/api/llm-analyze',{
       method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'x-api-key':apiKey,
-        'anthropic-version':'2023-06-01',
-        'anthropic-dangerous-direct-browser-access':'true'
-      },
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:4096,
-        system:LLM_SYSTEM,
-        messages:[{role:'user',content:buildAnalyzePrompt(text,followers)}]
-      })
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body:JSON.stringify({text,followers,engagement_rate:engrate})
     });
 
     if(!resp.ok){
-      const errBody=await resp.text();
-      throw new Error('API error '+resp.status+': '+errBody.substring(0,200));
+      const err=await resp.json().catch(()=>({}));
+      throw new Error(err.error||'API error '+resp.status);
     }
 
-    const data=await resp.json();
-    const rawText=data.content[0].text.trim();
-    let parsed={};
-    try{
-      const start=rawText.indexOf('{');
-      const end=rawText.lastIndexOf('}');
-      if(start>=0&&end>start) parsed=JSON.parse(rawText.substring(start,end+1));
-    }catch(e){parsed={}}
+    const parsed=await resp.json();
 
-    if(Object.keys(parsed).length===0){
-      res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">Failed to parse AI response</div>';
-    }else{
-      res.innerHTML=renderLLM(parsed);
+    if(parsed.error){
+      throw new Error(parsed.error);
     }
+
+    res.innerHTML=renderLLM(parsed);
     res.style.display='block';
   }catch(e){
     res.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a;font-size:14px">'+escHtml(e.message)+'</div>';
@@ -771,63 +659,12 @@ function loadHistory(text){document.getElementById('text').value=text;updateChar
 function clearHistory(){historyArr=[];localStorage.removeItem('ve_history');renderHistory()}
 
 // ---------------------------------------------------------------------------
-// Past Posts Analysis — Paste tweets and analyze with Claude
+// Past Posts Analysis — All handled via backend /api/past-posts-analyze
 // ---------------------------------------------------------------------------
-const PAST_POSTS_SYSTEM=`You are an expert X (Twitter) content strategist.
-You analyze a user's past posts to identify what content performs best.
-Your goal: find patterns in high-performing content and give actionable recommendations.
-
-You respond ONLY in valid JSON. No markdown fences. No explanation outside JSON.
-IMPORTANT: All text values in the JSON MUST be written in Japanese (日本語).`;
-
-function buildPastPostsPrompt(posts, username){
-  const numbered=posts.map((p,i)=>`${i+1}. "${p}"`).join('\n');
-  return `以下は @${username} の過去の投稿です。
-
-投稿一覧:
-${numbered}
-
-この投稿データを分析して、以下のJSON形式で回答してください:
-{
-  "summary": "<ユーザーのコンテンツ全体の傾向を2-3文で要約>",
-  "total_analyzed": ${posts.length},
-  "top_posts": [
-    {
-      "rank": 1,
-      "text": "<最もバズりやすい投稿テキスト>",
-      "why_good": "<なぜこの投稿が良いか>"
-    }
-  ],
-  "winning_patterns": [
-    {
-      "pattern": "<パターン名>",
-      "description": "<説明>",
-      "frequency": "<このパターンの出現頻度>"
-    }
-  ],
-  "content_recommendations": [
-    {
-      "title": "<推奨コンテンツタイプ>",
-      "description": "<具体的にどんな投稿を書くべきか>",
-      "example": "<投稿の例文>"
-    }
-  ],
-  "avoid": ["<避けるべきパターン1>", "<避けるべきパターン2>"],
-  "optimal_style": {
-    "tone": "<最適なトーン>",
-    "length": "<最適な文字数の範囲>",
-    "format": "<最適なフォーマット（改行の使い方など）>",
-    "topics": ["<強いトピック1>", "<強いトピック2>"]
-  }
-}
-
-top_postsはバイラル可能性が高い順に最大5件。winning_patternsは最大5件。content_recommendationsは最大3件。`;
-}
 
 // Toggle between auto-fetch and manual paste
 function toggleManualPaste(){
   const manual=document.getElementById('pastManualArea');
-  const auto=document.getElementById('autoFetchArea');
   const toggle=document.getElementById('toggleManual');
   if(manual.style.display==='none'){
     manual.style.display='block';
@@ -838,7 +675,7 @@ function toggleManualPaste(){
   }
 }
 
-// Auto-fetch tweets via server proxy (/api/user-tweets)
+// Auto-fetch tweets via server proxy (server uses its own credentials)
 async function autoFetchTweets(){
   const username=localStorage.getItem('ve_auth')||'';
   if(!username){showToast('ログインしてください');return;}
@@ -850,13 +687,12 @@ async function autoFetchTweets(){
   ld.querySelector('.loading-text').textContent='Xから投稿を取得中...';
 
   try{
-    // Try server proxy endpoint
-    const proxyUrl=location.origin+'/api/user-tweets';
-    const resp=await fetch(proxyUrl,{
+    const resp=await fetch('/api/user-tweets',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({username:username,bearer_token:X_BEARER,count:30}),
-      signal:AbortSignal.timeout(10000)
+      credentials:'same-origin',
+      body:JSON.stringify({username:username,count:30}),
+      signal:AbortSignal.timeout(15000)
     });
 
     if(!resp.ok){
@@ -870,14 +706,12 @@ async function autoFetchTweets(){
     const tweets=data.tweets||[];
     if(tweets.length===0) throw new Error('投稿が見つかりません');
 
-    // Extract text and run AI analysis
     const posts=tweets.map(t=>t.text).filter(t=>t&&t.trim().length>0);
     ld.querySelector('.loading-text').textContent='AIが'+posts.length+'件の投稿を分析中...';
 
     await runPastPostsAI(posts, username, res);
     res.style.display='block';
   }catch(e){
-    // Auto-fetch failed — show manual paste and explain
     console.warn('Auto-fetch failed:',e.message);
     document.getElementById('pastManualArea').style.display='block';
     document.getElementById('pastDesc').innerHTML=
@@ -891,40 +725,22 @@ async function autoFetchTweets(){
   }
 }
 
-// Shared AI analysis function for both auto-fetch and paste
+// Shared AI analysis — calls backend /api/past-posts-analyze
 async function runPastPostsAI(posts, username, resEl){
-  const _k=['***REMOVED***','***REMOVED***','***REMOVED***','***REMOVED***'];
-  const apiKey=atob(_k.join(''));
-
-  const aiResp=await fetch('https://api.anthropic.com/v1/messages',{
+  const resp=await fetch('/api/past-posts-analyze',{
     method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'x-api-key':apiKey,
-      'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'
-    },
-    body:JSON.stringify({
-      model:'claude-sonnet-4-20250514',
-      max_tokens:4096,
-      system:PAST_POSTS_SYSTEM,
-      messages:[{role:'user',content:buildPastPostsPrompt(posts,username)}]
-    })
+    headers:{'Content-Type':'application/json'},
+    credentials:'same-origin',
+    body:JSON.stringify({posts,username})
   });
 
-  if(!aiResp.ok){
-    const errBody=await aiResp.text();
-    throw new Error('AI分析エラー '+aiResp.status+': '+errBody.substring(0,200));
+  if(!resp.ok){
+    const err=await resp.json().catch(()=>({}));
+    throw new Error(err.error||'AI分析エラー '+resp.status);
   }
 
-  const aiData=await aiResp.json();
-  const rawText=aiData.content[0].text.trim();
-  let parsed={};
-  try{
-    const start=rawText.indexOf('{');
-    const end=rawText.lastIndexOf('}');
-    if(start>=0&&end>start) parsed=JSON.parse(rawText.substring(start,end+1));
-  }catch(e){parsed={}}
+  const parsed=await resp.json();
+  if(parsed.error) throw new Error(parsed.error);
 
   if(Object.keys(parsed).length===0){
     resEl.innerHTML='<div style="text-align:center;padding:20px;color:#ff453a">AI応答の解析に失敗しました</div>';

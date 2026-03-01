@@ -1,16 +1,23 @@
 # X Virality Optimization Engine Configuration
+# Set secrets via environment variables:
+#   X_BEARER_TOKEN, ANTHROPIC_API_KEY, FLASK_SECRET_KEY
 
 x_api:
-  # Bearer token — can also be set via X_BEARER_TOKEN environment variable
-  bearer_token: "***REMOVED_X_BEARER_TOKEN***"
+  # Set via X_BEARER_TOKEN environment variable
+  bearer_token: ""
+
+auth:
+  allowed_handles:
+    - "lovejesusyt"
+  secret_key: ""
+
+allowed_origins: []
 
 storage:
   db_path: "data/virality.db"
 
 nlp:
   embedding_dim: 384
-  # Auto-detect sentence-transformers for better embeddings
   try_real_embeddings: true
 
-# ML model path (null = formula-only scoring for MVP)
 model_path: null
