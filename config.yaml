@@ -7,8 +7,8 @@ x_api:
   bearer_token: ""
 
 auth:
-  allowed_handles:
-    - "lovejesusyt"
+  # Set allowed handles via ALLOWED_HANDLES environment variable (comma-separated)
+  allowed_handles: []
   secret_key: ""
 
 allowed_origins: []
