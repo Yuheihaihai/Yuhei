@@ -13,7 +13,7 @@ from functools import wraps
 
 import requests as http_requests
 import yaml
-from flask import Flask, request, jsonify, send_file, session
+from flask import Flask, request, jsonify, send_file, send_from_directory, session
 
 from src.core.virality_engine import PostInput, ViralityEngine
 from src.llm.analyzer import LLMAnalyzer
@@ -160,7 +160,9 @@ def get_llm():
     return _llm
 
 
-_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "index.html")
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_HTML_PATH = os.path.join(_BASE_DIR, "docs", "index.html")
+_STATIC_DIR = os.path.join(_BASE_DIR, "static")
 
 MAX_TEXT_LENGTH = 10000
 
@@ -179,6 +181,16 @@ def _validated_post_data(data: dict):
 @app.route("/")
 def index():
     return send_file(_HTML_PATH)
+
+
+@app.route("/sw.js")
+def service_worker():
+    return send_from_directory(_STATIC_DIR, "sw.js", mimetype="application/javascript")
+
+
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    return send_from_directory(_STATIC_DIR, filename)
 
 
 @app.route("/api/login", methods=["POST"])

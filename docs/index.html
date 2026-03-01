@@ -6,6 +6,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#000000">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>Virality Engine</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -194,6 +196,31 @@ body{
 .login-btn:disabled{background:#1c1c1e;color:#48484a;cursor:default;transform:none}
 .login-error{font-size:13px;color:#ff453a;margin-top:12px;min-height:20px}
 .login-footer{font-size:12px;color:#48484a;margin-top:40px}
+/* ===== Top bar (logout + user) ===== */
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:env(safe-area-inset-top,12px) 0 0}
+.top-bar .user-label{font-size:13px;color:#86868b}
+.top-bar .logout-btn{
+  font-size:13px;color:#ff453a;background:none;border:1px solid #ff453a33;
+  padding:6px 14px;border-radius:20px;cursor:pointer;font-family:inherit;
+}
+.top-bar .logout-btn:active{background:#ff453a22}
+/* ===== PWA install banner ===== */
+.install-banner{
+  display:none;background:linear-gradient(135deg,#0a84ff,#5e5ce6);
+  border-radius:16px;padding:16px;margin-top:16px;text-align:center;
+  animation:fadeUp .4s ease;
+}
+.install-banner .install-title{font-size:15px;font-weight:600;color:#fff;margin-bottom:6px}
+.install-banner .install-desc{font-size:12px;color:rgba(255,255,255,.7);margin-bottom:12px;line-height:1.4}
+.install-banner .install-btn{
+  background:#fff;color:#0a84ff;border:none;border-radius:12px;
+  padding:10px 28px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;
+}
+.install-banner .install-btn:active{transform:scale(.97)}
+.install-banner .install-dismiss{
+  font-size:12px;color:rgba(255,255,255,.6);margin-top:8px;cursor:pointer;
+  display:inline-block;padding:4px 8px;
+}
 .llm-loading{display:none;text-align:center;padding:40px 0}
 .llm-loading .loading-ring{border-top-color:#bf5af2}
 .llm-loading .loading-text{color:#bf5af2}
@@ -295,9 +322,19 @@ body{
 
 <!-- Main App (hidden until login) -->
 <div class="app" id="mainApp" style="display:none">
+  <div class="top-bar">
+    <span class="user-label" id="userLabel"></span>
+    <button class="logout-btn" onclick="logout()">ログアウト</button>
+  </div>
   <div class="header">
     <h1>Virality Engine</h1>
     <p>Xの投稿をAIが分析し、バズる戦略を提案します。</p>
+  </div>
+  <div class="install-banner" id="installBanner">
+    <div class="install-title">ホーム画面に追加</div>
+    <div class="install-desc">アプリのようにすぐ起動できます</div>
+    <button class="install-btn" id="installBtn" onclick="installPWA()">インストール</button>
+    <div class="install-dismiss" onclick="dismissInstall()">あとで</div>
   </div>
   <div class="input-area">
     <div class="textarea-wrap">
@@ -486,6 +523,9 @@ async function checkSession(){
 function showApp(){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('mainApp').style.display='block';
+  const user=localStorage.getItem('ve_auth')||'';
+  const name=localStorage.getItem('ve_auth_name')||user;
+  document.getElementById('userLabel').textContent=name?'@'+name:'';
 }
 
 function logout(){
@@ -774,6 +814,51 @@ async function analyzePastPosts(){
     ld.querySelector('.loading-text').textContent='AIが過去の投稿を分析中...';
   }
 }
+
+// ---------------------------------------------------------------------------
+// PWA Install Prompt
+// ---------------------------------------------------------------------------
+let _deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',(e)=>{
+  e.preventDefault();
+  _deferredPrompt=e;
+  if(!localStorage.getItem('ve_pwa_dismiss')){
+    document.getElementById('installBanner').style.display='block';
+  }
+});
+function installPWA(){
+  if(!_deferredPrompt)return;
+  _deferredPrompt.prompt();
+  _deferredPrompt.userChoice.then((result)=>{
+    _deferredPrompt=null;
+    document.getElementById('installBanner').style.display='none';
+  });
+}
+function dismissInstall(){
+  document.getElementById('installBanner').style.display='none';
+  localStorage.setItem('ve_pwa_dismiss','1');
+}
+
+// Service Worker Registration
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+
+// ---------------------------------------------------------------------------
+// iOS Safari PWA install hint
+// ---------------------------------------------------------------------------
+function checkIOSInstallHint(){
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isStandalone=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+  if(isIOS&&!isStandalone&&!localStorage.getItem('ve_pwa_dismiss')){
+    const banner=document.getElementById('installBanner');
+    banner.querySelector('.install-title').textContent='ホーム画面に追加';
+    banner.querySelector('.install-desc').innerHTML='Safari下部の<strong>共有ボタン</strong> → <strong>ホーム画面に追加</strong>で<br>アプリのように使えます';
+    banner.querySelector('.install-btn').style.display='none';
+    banner.style.display='block';
+  }
+}
+document.addEventListener('DOMContentLoaded',()=>setTimeout(checkIOSInstallHint,2000));
 
 function renderPastPostsAnalysis(d,username){
   let h='';
