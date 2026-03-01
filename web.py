@@ -476,4 +476,5 @@ def api_auth_exchange():
 
 if __name__ == "__main__":
     print("WARNING: Flask dev server is not for production. Use gunicorn/waitress.", file=sys.stderr)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
