@@ -1,0 +1,16 @@
+# Core (statistical backbone) — numpy only.
+numpy>=1.24
+
+# Optional extras (install as needed):
+#   anthropic>=0.30        live persona agents over the API (AnthropicBackend)
+#   matplotlib>=3.7        fingerprint scatter plots
+#   umap-learn>=0.5        nicer 2D fingerprint embedding (PCA fallback otherwise)
+#   pytest>=7.0            test suite
+#
+# Production stack from the design doc (wire in behind the same interfaces):
+#   transformers, peft     LoRA/QLoRA bias injection (Phase 4)
+#   vllm                   efficient batched inference for open-weights panels
+#   sentence-transformers  question / output embeddings
+#   pyribs                 MAP-Elites archive (Quality-Diversity)
+#   crowd-kit              reference Dawid-Skene implementation
+#   dppy                   DPP sampling for panel selection
